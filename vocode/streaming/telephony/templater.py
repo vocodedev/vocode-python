@@ -18,3 +18,19 @@ class Templater:
             self.render_template("connect_call.xml", base_url=base_url, id=call_id),
             media_type="application/xml",
         )
+
+    def get_play_digits_and_connect_call_twiml(self, call_id: str, base_url: str, digits: str):
+        # Note that this returns just the raw TWIML, not a Response object.
+        return self.render_template(
+            "play_digits_and_connect_call.xml",
+            base_url=base_url,
+            id=call_id,
+            digits=digits,
+        )
+
+    def get_play_digits_twiml(self, digits: str):
+        # Note that this returns just the raw TWIML, not a Response object.
+        return self.render_template(
+            "play_digits.xml",
+            digits=digits,
+        )

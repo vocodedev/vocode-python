@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict
 import logging
 
 from fastapi import APIRouter, HTTPException, WebSocket
@@ -42,11 +42,12 @@ class CallsRouter(BaseRouter):
     async def connect_call(self, websocket: WebSocket, id: str):
         await websocket.accept()
         self.logger.debug("Phone WS connection opened for chat {}".format(id))
+
         call_config = self.config_manager.get_config(id)
         if not call_config:
             raise HTTPException(status_code=400, detail="No active phone call")
 
-        call: Call = Call.from_call_config(
+        call = Call.from_call_config(
             base_url=self.base_url,
             call_config=call_config,
             config_manager=self.config_manager,
@@ -59,6 +60,7 @@ class CallsRouter(BaseRouter):
         )
 
         await call.attach_ws_and_start(websocket)
+
         self.logger.debug("Phone WS connection closed for chat {}".format(id))
 
     def get_router(self) -> APIRouter:

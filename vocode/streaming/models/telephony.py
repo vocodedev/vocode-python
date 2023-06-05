@@ -4,7 +4,7 @@ from vocode.streaming.models.model import BaseModel
 from vocode.streaming.models.agent import AgentConfig
 from vocode.streaming.models.synthesizer import SynthesizerConfig
 from vocode.streaming.models.transcriber import TranscriberConfig
-
+from vocode.streaming.models.transcript import Transcript
 
 class TwilioConfig(BaseModel):
     account_sid: str
@@ -61,3 +61,4 @@ class CallConfig(BaseModel):
     twilio_sid: str
     twilio_from: Optional[str]
     twilio_to: Optional[str]
+    transcript: Optional[Transcript]

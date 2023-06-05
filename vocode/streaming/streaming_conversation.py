@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable, Generic, Optional, Tuple, TypeVar
 import logging
 import time
 import typing
+import re
 
 from vocode.streaming.action.worker import ActionsWorker
 from vocode.streaming.agent.action_agent import ActionAgent
@@ -56,6 +57,8 @@ from vocode.streaming.utils.worker import (
     InterruptibleEventFactory,
     InterruptibleWorker,
 )
+
+DTMF_INTENT_REGEX = re.compile(".*\*presses ([0-9])\*.*")
 
 OutputDeviceType = TypeVar("OutputDeviceType", bound=BaseOutputDevice)
 
@@ -248,7 +251,20 @@ class StreamingConversation(Generic[OutputDeviceType]):
                     ):
                         await self.conversation.filler_audio_worker.wait_for_filler_audio_to_finish()
 
-                self.conversation.logger.debug("Synthesizing speech for message")
+                self.conversation.logger.debug("Synthesizing speech for message: " + agent_response_message.message.text)
+
+                # Check if the message indicates that we should press a DTMF key.  If so, and if the conversation supports it, play that tone.
+                # This happens in addition to normal processing, which means we will play the tone and also speak the message.
+                self.conversation.logger.debug("Checking if message shows intent to press DTMF key: %s" % agent_response_message.message.text)
+                match = DTMF_INTENT_REGEX.match(agent_response_message.message.text.lower())
+                if match and match.group(1):
+                    dtmf_key = match.group(1)
+                    self.conversation.logger.debug("Detected intent to press DTMF key: %s" % dtmf_key)
+                    if hasattr(self.conversation, "play_dtmf"):
+                        self.conversation.play_dtmf(dtmf_key)
+                else:
+                    self.conversation.logger.debug("Did not detect intent to press DTMF key")
+
                 synthesis_result = await self.conversation.synthesizer.create_speech(
                     agent_response_message.message,
                     self.chunk_size,
@@ -308,6 +324,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         per_chunk_allowance_seconds: float = PER_CHUNK_ALLOWANCE_SECONDS,
         events_manager: Optional[EventsManager] = None,
         logger: Optional[logging.Logger] = None,
+        transcript: Optional[Transcript] = None,
     ):
         self.id = conversation_id or create_conversation_id()
         self.logger = logger or logging.getLogger(__name__)
@@ -360,7 +377,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         self.events_manager = events_manager or EventsManager()
         self.events_task: Optional[asyncio.Task] = None
         self.per_chunk_allowance_seconds = per_chunk_allowance_seconds
-        self.transcript = Transcript()
+        self.transcript = transcript or Transcript()
         self.transcript.attach_events_manager(self.events_manager)
         self.bot_sentiment = None
         if self.agent.get_agent_config().track_bot_sentiment:
@@ -551,11 +568,12 @@ class StreamingConversation(Generic[OutputDeviceType]):
     def mark_terminated(self):
         self.active = False
 
-    def terminate(self):
+    def terminate(self, conversation_ended=True):
         self.mark_terminated()
-        self.events_manager.publish_event(
-            TranscriptCompleteEvent(conversation_id=self.id, transcript=self.transcript)
-        )
+        if conversation_ended:
+            self.events_manager.publish_event(
+                TranscriptCompleteEvent(conversation_id=self.id, transcript=self.transcript)
+            )
         if self.check_for_idle_task:
             self.logger.debug("Terminating check_for_idle Task")
             self.check_for_idle_task.cancel()

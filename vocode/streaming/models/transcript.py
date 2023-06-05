@@ -39,7 +39,7 @@ class Action(EventLog):
 
 
 class Transcript(BaseModel):
-    event_logs: List[EventLog] = []
+    event_logs: List[Union[Message, Action]] = []
     start_time: float = Field(default_factory=time.time)
     events_manager: Optional[EventsManager] = None
 

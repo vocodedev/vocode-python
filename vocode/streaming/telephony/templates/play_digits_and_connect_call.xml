@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Play digits="{{ digits }}"></Play>
+  <Connect>
+    <Stream url="wss://{{ base_url }}/connect_call/{{ id }}" />
+  </Connect>
+</Response>

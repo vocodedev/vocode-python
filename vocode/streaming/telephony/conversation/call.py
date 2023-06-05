@@ -30,6 +30,7 @@ from vocode.streaming.telephony.config_manager.base_config_manager import (
 )
 from vocode.streaming.telephony.constants import DEFAULT_SAMPLING_RATE
 from vocode.streaming.telephony.utils import create_twilio_client, end_twilio_call
+from vocode.streaming.telephony.templater import Templater
 from vocode.streaming.models.audio_encoding import AudioEncoding
 from vocode.streaming.streaming_conversation import StreamingConversation
 from vocode.streaming.transcriber.base_transcriber import BaseTranscriber
@@ -47,6 +48,7 @@ class Call(StreamingConversation):
         self,
         base_url: str,
         config_manager: BaseConfigManager,
+        call_config: CallConfig,
         agent_config: AgentConfig,
         transcriber_config: TranscriberConfig,
         synthesizer_config: SynthesizerConfig,
@@ -61,6 +63,7 @@ class Call(StreamingConversation):
     ):
         self.base_url = base_url
         self.config_manager = config_manager
+        self.call_config = call_config
         self.twilio_config = twilio_config or TwilioConfig(
             account_sid=getenv("TWILIO_ACCOUNT_SID"),
             auth_token=getenv("TWILIO_AUTH_TOKEN"),
@@ -75,9 +78,13 @@ class Call(StreamingConversation):
             per_chunk_allowance_seconds=0.01,
             events_manager=events_manager,
             logger=logger,
+            transcript=call_config.transcript,
         )
         self.twilio_sid = twilio_sid
         self.latest_media_timestamp = 0
+        self.twilio_call = None
+        self.templater = Templater()
+        self.playing_dtmf = False
 
     @staticmethod
     def from_call_config(
@@ -95,6 +102,7 @@ class Call(StreamingConversation):
             base_url=base_url,
             logger=logger,
             config_manager=config_manager,
+            call_config=call_config,
             agent_config=call_config.agent_config,
             transcriber_config=call_config.transcriber_config,
             synthesizer_config=call_config.synthesizer_config,
@@ -113,11 +121,11 @@ class Call(StreamingConversation):
         self.output_device.ws = ws
         self.logger.debug("Attached WS to outbound call")
 
-        twilio_call = self.twilio_client.calls(self.twilio_sid).fetch()
+        self.twilio_call = self.twilio_client.calls(self.twilio_sid).fetch()
 
-        if twilio_call.answered_by in ("machine_start", "fax"):
-            self.logger.info(f"Call answered by {twilio_call.answered_by}")
-            twilio_call.update(status="completed")
+        if self.twilio_call is not None and self.twilio_call.answered_by in ("machine_start", "fax"):
+            self.logger.info(f"Call answered by {self.twilio_call.answered_by}")
+            self.twilio_call.update(status="completed")
         else:
             await self.wait_for_twilio_start(ws)
             await super().start()
@@ -131,6 +139,7 @@ class Call(StreamingConversation):
                 response = await self.handle_ws_message(message)
                 if response == PhoneCallAction.CLOSE_WEBSOCKET:
                     break
+
         self.tear_down()
 
     async def wait_for_twilio_start(self, ws: WebSocket):
@@ -172,12 +181,48 @@ class Call(StreamingConversation):
 
     def mark_terminated(self):
         super().mark_terminated()
-        end_twilio_call(
-            self.twilio_client,
-            self.twilio_sid,
-        )
-        self.config_manager.delete_config(self.id)
+        if self.playing_dtmf:
+            self.logger.debug("We are playing DTMF so we won't terminate the call.  Instead, saving call config.")
+            # Save the transcript on the call config before we store it
+            self.call_config.transcript = self.transcript
+            # But clear out the events_manager because it may not be JSON serializable
+            self.call_config.transcript.events_manager = None
+            # Now store it, so we can continue with the same transcript when we get the next websocket connection
+            self.config_manager.save_config(conversation_id=self.id, config=self.call_config)
+        else:
+            self.logger.debug("Ending call")
+            end_twilio_call(
+                self.twilio_client,
+                self.twilio_sid,
+            )
+            self.config_manager.delete_config(self.id)
 
     def tear_down(self):
-        self.events_manager.publish_event(PhoneCallEndedEvent(conversation_id=self.id))
-        self.terminate()
+        conversation_ended = not self.playing_dtmf
+
+        if conversation_ended:
+            self.events_manager.publish_event(PhoneCallEndedEvent(conversation_id=self.id))
+
+        self.terminate(conversation_ended=conversation_ended)
+
+    def play_dtmf(self, dtmf_key: str):
+        # Twilio does not support playing DTMF tones as a wav file through the <Stream>.
+        # The workaround is to use Twilio's own <Play> verb to play the DTMF tones.
+        # However, this causes the websocket to get a "stop" event.  So, just before playing the tone, we set
+        # a flag so we'll know that the websocket's closing is not an indication that the call should end (as
+        # is normally the case).  Also, we include an additional <Connect> as part of the same request, so as
+        # to re-establish the websocket connection.
+        # Reference:
+        # https://stackoverflow.com/questions/73129566/sending-dtmf-through-a-stream/76325543
+        self.logger.debug(f"Call.play_dtmf {dtmf_key}")
+        self.playing_dtmf = True
+        # twiml = self.templater.get_play_digits_twiml(digits=dtmf_key)
+        twiml = self.templater.get_play_digits_and_connect_call_twiml(
+            call_id=self.id,
+            base_url=self.base_url,
+            digits=dtmf_key)
+        self.logger.debug(f"twiml: {twiml}")
+        if self.twilio_call is None:
+            self.logger.error("twilio_call is None")
+        else:
+            self.twilio_call.update(twiml=twiml)

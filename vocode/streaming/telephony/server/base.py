@@ -130,6 +130,7 @@ class TelephonyServer:
                 twilio_sid=twilio_sid,
                 twilio_from=twilio_from,
                 twilio_to=twilio_to,
+                transcript=None,
             )
 
             conversation_id = create_conversation_id()
