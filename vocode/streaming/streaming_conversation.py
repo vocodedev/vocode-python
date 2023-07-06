@@ -463,6 +463,19 @@ class StreamingConversation(Generic[OutputDeviceType]):
         if len(self.events_manager.subscriptions) > 0:
             self.events_task = asyncio.create_task(self.events_manager.start())
 
+    async def restart(
+            self,
+            output_device: OutputDeviceType,
+            mark_ready: Optional[Callable[[], Awaitable[None]]] = None
+        ):
+        self.output_device = output_device
+        self.output_device.start()
+        is_ready = await self.transcriber.ready()
+        if not is_ready:
+            raise Exception("Transcriber startup failed")
+        if mark_ready:
+            await mark_ready()
+
     async def check_for_idle(self):
         """Terminates the conversation after 15 seconds if no activity is detected"""
         while self.is_active():

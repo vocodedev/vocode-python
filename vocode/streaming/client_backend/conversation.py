@@ -54,6 +54,7 @@ class ConversationRouter(BaseRouter):
         logger: Optional[logging.Logger] = None,
     ):
         super().__init__()
+        self.sessions: typing.Dict[str, StreamingConversation] = {}
         self.transcriber_thunk = transcriber_thunk
         self.agent = agent
         self.synthesizer_thunk = synthesizer_thunk
@@ -61,7 +62,21 @@ class ConversationRouter(BaseRouter):
         self.router = APIRouter()
         self.router.websocket("/conversation")(self.conversation)
 
-    def get_conversation(
+    async def get_conversation(
+        self,
+        output_device: WebsocketOutputDevice,
+        start_message: AudioConfigStartMessage,
+    ) -> typing.Union[StreamingConversation, None]:
+        if start_message.conversation_id is None:
+            return None
+        conversation = self.sessions.get(start_message.conversation_id)
+        if conversation is None:
+            return None
+        self.logger.debug(f"get_conversation restart...")
+        await conversation.restart(output_device, lambda: output_device.ws.send_text(ReadyMessage().json()))
+        return conversation
+        
+    async def new_conversation(
         self,
         output_device: WebsocketOutputDevice,
         start_message: AudioConfigStartMessage,
@@ -69,7 +84,7 @@ class ConversationRouter(BaseRouter):
         transcriber = self.transcriber_thunk(start_message.input_audio_config)
         synthesizer = self.synthesizer_thunk(start_message.output_audio_config)
         synthesizer.synthesizer_config.should_encode_as_wav = True
-        return StreamingConversation(
+        conversation =  StreamingConversation(
             output_device=output_device,
             transcriber=transcriber,
             agent=self.agent,
@@ -78,6 +93,16 @@ class ConversationRouter(BaseRouter):
             events_manager=TranscriptEventManager(output_device, self.logger) if start_message.subscribe_transcript else None,
             logger=self.logger,
         )
+        if start_message.conversation_id:
+            self.sessions[start_message.conversation_id] = conversation
+        await conversation.start(lambda: output_device.ws.send_text(ReadyMessage().json()))
+        return conversation
+    
+    def del_conversation(self, conversation):
+        keys = list(self.sessions.keys())
+        for key in keys:
+            if self.sessions[key] == conversation:
+                del self.sessions[key]
 
     async def conversation(self, websocket: WebSocket):
         await websocket.accept()
@@ -85,13 +110,15 @@ class ConversationRouter(BaseRouter):
             await websocket.receive_json()
         )
         self.logger.debug(f"Conversation started")
+        # self.logger.debug(start_message.dict())
         output_device = WebsocketOutputDevice(
             websocket,
             start_message.output_audio_config.sampling_rate,
             start_message.output_audio_config.audio_encoding,
         )
-        conversation = self.get_conversation(output_device, start_message)
-        await conversation.start(lambda: websocket.send_text(ReadyMessage().json()))
+        conversation = await self.get_conversation(output_device, start_message)
+        if conversation is None:
+            conversation = await self.new_conversation(output_device, start_message)
         while conversation.is_active():
             message: WebSocketMessage = WebSocketMessage.parse_obj(
                 await websocket.receive_json()
@@ -101,6 +128,7 @@ class ConversationRouter(BaseRouter):
             audio_message = typing.cast(AudioMessage, message)
             conversation.receive_audio(audio_message.get_bytes())
         output_device.mark_closed()
+        self.del_conversation(conversation)
         conversation.terminate()
 
     def get_router(self) -> APIRouter:
