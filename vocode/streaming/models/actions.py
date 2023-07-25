@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class ActionType(str, Enum):
     BASE = "action_base"
     NYLAS_SEND_EMAIL = "action_nylas_send_email"
+    PINECONE_LOOKUP = "action_pinecone_lookup"
 
 
 ParametersType = TypeVar("ParametersType", bound=BaseModel)
