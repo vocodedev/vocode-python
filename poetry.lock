@@ -2467,6 +2467,31 @@ files = [
 dev = ["atomicwrites (==1.2.1)", "attrs (==19.2.0)", "coverage (==6.5.0)", "hatch", "invoke (==1.7.3)", "more-itertools (==4.3.0)", "pbr (==4.3.0)", "pluggy (==1.0.0)", "py (==1.11.0)", "pytest (==7.2.0)", "pytest-cov (==4.0.0)", "pytest-timeout (==2.1.0)", "pyyaml (==5.1)"]
 
 [[package]]
+name = "python-telegram-bot"
+version = "20.3"
+description = "We have made you a wrapper you can't refuse"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "python-telegram-bot-20.3.tar.gz", hash = "sha256:73e46a534be9d1c790ce8b494765cca18a5c2f3f5b4932d83bcb06bb0051eb4a"},
+    {file = "python_telegram_bot-20.3-py3-none-any.whl", hash = "sha256:1185edee387db7b08027e87b67fa9a3cc3263ae5ab5bb55513acd1bca5c3cf4b"},
+]
+
+[package.dependencies]
+httpx = ">=0.24.0,<0.25.0"
+
+[package.extras]
+all = ["APScheduler (>=3.10.1,<3.11.0)", "aiolimiter (>=1.0.0,<1.1.0)", "cachetools (>=5.3.0,<5.4.0)", "cryptography (>=39.0.1)", "httpx[http2]", "httpx[socks]", "pytz (>=2018.6)", "tornado (>=6.2,<7.0)"]
+callback-data = ["cachetools (>=5.3.0,<5.4.0)"]
+ext = ["APScheduler (>=3.10.1,<3.11.0)", "aiolimiter (>=1.0.0,<1.1.0)", "cachetools (>=5.3.0,<5.4.0)", "pytz (>=2018.6)", "tornado (>=6.2,<7.0)"]
+http2 = ["httpx[http2]"]
+job-queue = ["APScheduler (>=3.10.1,<3.11.0)", "pytz (>=2018.6)"]
+passport = ["cryptography (>=39.0.1)"]
+rate-limiter = ["aiolimiter (>=1.0.0,<1.1.0)"]
+socks = ["httpx[socks]"]
+webhooks = ["tornado (>=6.2,<7.0)"]
+
+[[package]]
 name = "pytz"
 version = "2023.3"
 description = "World timezone definitions, modern and historical"
@@ -3580,4 +3605,4 @@ transcribers = ["google-cloud-speech"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<3.12"
-content-hash = "6e92cb9298f033894b86ab6c1f70fcebcb132948d8b1d111acb2d9e24405f939"
+content-hash = "3a092f41f11bba07c3618f43300dade803cd59b88ad75496f3b6592f8f0c88de"

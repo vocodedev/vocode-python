@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 import openai
 from langchain.prompts import (
     ChatPromptTemplate,
@@ -25,7 +25,7 @@ class ChatGPTAgent(BaseAgent):
         max_tokens: int = 100,
         memory: Optional[ConversationBufferMemory] = None,
     ):
-        super().__init__(initial_message=initial_message)
+        super().__init__(system_prompt=system_prompt, initial_message=initial_message)
         openai.api_key = getenv("OPENAI_API_KEY", api_key)
         if not openai.api_key:
             raise ValueError("OpenAI API key not provided")
@@ -36,7 +36,12 @@ class ChatGPTAgent(BaseAgent):
                 HumanMessagePromptTemplate.from_template("{input}"),
             ]
         )
-        self.memory = memory if memory else ConversationBufferMemory(return_messages=True)
+        self.model_name = model_name
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.memory = (
+            memory if memory else ConversationBufferMemory(return_messages=True)
+        )
         if initial_message:
             self.memory.chat_memory.add_ai_message(initial_message)
         self.llm = ChatOpenAI(  # type: ignore
@@ -50,3 +55,11 @@ class ChatGPTAgent(BaseAgent):
 
     def respond(self, human_input: str):
         return self.conversation.predict(input=human_input)
+
+    def respond_to_message_history(self, messages: List = []):
+        return openai.ChatCompletion.create(
+            model=self.model_name,
+            messages=messages,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+        )
