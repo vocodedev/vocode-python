@@ -5,7 +5,8 @@ import io
 import pathlib
 import wave
 from pydub import AudioSegment
-
+import logging
+from typing import Optional
 import numpy as np
 from vocode.streaming.agent.utils import SENTENCE_ENDINGS
 from vocode.streaming.models.transcriber import WhisperCPPTranscriberConfig
@@ -24,6 +25,7 @@ class WhisperCPPTranscriber(BaseThreadAsyncTranscriber[WhisperCPPTranscriberConf
     def __init__(
         self,
         transcriber_config: WhisperCPPTranscriberConfig,
+        logger: Optional[logging.Logger] = logging.getLogger(__name__),
     ):
         super().__init__(transcriber_config)
         self._ended = False

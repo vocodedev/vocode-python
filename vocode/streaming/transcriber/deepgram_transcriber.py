@@ -8,6 +8,9 @@ import audioop
 from urllib.parse import urlencode
 from vocode import getenv
 
+from vocode.streaming.models.endpoint_classifier_model import EndpointClassifier
+
+
 from vocode.streaming.transcriber.base_transcriber import (
     BaseAsyncTranscriber,
     Transcription,
@@ -19,7 +22,7 @@ from vocode.streaming.models.transcriber import (
     EndpointingType,
 )
 from vocode.streaming.models.audio_encoding import AudioEncoding
-
+from vocode.streaming.models.endpoint_classifier_model import EndpointClassifier
 
 PUNCTUATION_TERMINATORS = [".", "!", "?"]
 NUM_RESTARTS = 5
@@ -42,6 +45,8 @@ duration_hist = meter.create_histogram(
     unit="seconds",
 )
 
+classy = EndpointClassifier()
+
 
 class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
     def __init__(
@@ -59,7 +64,8 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
         self._ended = False
         self.is_ready = False
         self.logger = logger or logging.getLogger(__name__)
-        self.audio_cursor = 0.
+        self.audio_cursor = 0.0
+        self.classifier = classy
 
     async def _run_loop(self):
         restarts = 0
@@ -103,11 +109,15 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
             "channels": 1,
             "interim_results": "true",
         }
+        # trial
         extra_params = {}
+        extra_params["interim_results"] = "true"
+        extra_params["diarize"] = "true"
+        extra_params["tier"] = "phonecall"
         if self.transcriber_config.language:
             extra_params["language"] = self.transcriber_config.language
         if self.transcriber_config.model:
-            extra_params["model"] = self.transcriber_config.model
+            extra_params["model"] = "nova"
         if self.transcriber_config.tier:
             extra_params["tier"] = self.transcriber_config.tier
         if self.transcriber_config.version:
@@ -119,46 +129,9 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
             and self.transcriber_config.endpointing_config.type
             == EndpointingType.PUNCTUATION_BASED
         ):
-            extra_params["punctuate"] = "true"
+            extra_params["punctuate"] = "false"
         url_params.update(extra_params)
         return f"wss://api.deepgram.com/v1/listen?{urlencode(url_params)}"
-
-    def is_speech_final(
-        self, current_buffer: str, deepgram_response: dict, time_silent: float
-    ):
-        transcript = deepgram_response["channel"]["alternatives"][0]["transcript"]
-
-        # if it is not time based, then return true if speech is final and there is a transcript
-        if not self.transcriber_config.endpointing_config:
-            return transcript and deepgram_response["speech_final"]
-        elif (
-            self.transcriber_config.endpointing_config.type
-            == EndpointingType.TIME_BASED
-        ):
-            # if it is time based, then return true if there is no transcript
-            # and there is some speech to send
-            # and the time_silent is greater than the cutoff
-            return (
-                not transcript
-                and current_buffer
-                and (time_silent + deepgram_response["duration"])
-                > self.transcriber_config.endpointing_config.time_cutoff_seconds
-            )
-        elif (
-            self.transcriber_config.endpointing_config.type
-            == EndpointingType.PUNCTUATION_BASED
-        ):
-            return (
-                transcript
-                and deepgram_response["speech_final"]
-                and transcript.strip()[-1] in PUNCTUATION_TERMINATORS
-            ) or (
-                not transcript
-                and current_buffer
-                and (time_silent + deepgram_response["duration"])
-                > self.transcriber_config.endpointing_config.time_cutoff_seconds
-            )
-        raise Exception("Endpointing config not supported")
 
     def calculate_time_silent(self, data: dict):
         end = data["start"] + data["duration"]
@@ -167,8 +140,35 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
             return end - words[-1]["end"]
         return data["duration"]
 
+    def is_speech_final(self, deep_response: dict, time_silent: float = 0.0):
+        transcript = deep_response["channel"]["alternatives"][0]["transcript"]
+
+        # this will be parameter based by default
+        if not self.transcriber_config.endpointing_config:
+            self.logger.debug("We have selected default based endpointing")
+
+            return transcript and deep_response["speech_final"]
+        elif (
+            self.transcriber_config.endpointing_config.type
+            == EndpointingType.PUNCTUATION_BASED
+        ):
+            return (
+                transcript
+                and transcript.strip()[-1] in PUNCTUATION_TERMINATORS
+                and deep_response["speech_final"]
+            ) or (False)
+        elif (
+            self.transcriber_config.endpointing_config.type
+            == EndpointingType.CLASSIFIER_BASED
+        ):
+            self.logger.debug("We have selected classifier based endpointing")
+            return transcript and self.classifier.classify_text(
+                transcript, return_as_int=False
+            )  # or deep_response["speech_final"]
+        raise Exception("Endpointing config not supported")
+
     async def process(self):
-        self.audio_cursor = 0.
+        self.audio_cursor = 0.0
         extra_headers = {"Authorization": f"Token {self.api_key}"}
 
         async with websockets.connect(
@@ -202,9 +202,11 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
                         self.logger.debug(f"Got error {e} in Deepgram receiver")
                         break
                     data = json.loads(msg)
+                    self.logger.debug(f"Received message from Deepgram: {data['type']}")
                     if (
                         not "is_final" in data
                     ):  # means we've finished receiving transcriptions
+                        self.logger.debug("No is_final in Deepgram response, breaking")
                         break
                     cur_max_latency = self.audio_cursor - transcript_cursor
                     transcript_cursor = data["start"] + data["duration"]
@@ -220,32 +222,42 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
                     min_latency_hist.record(max(cur_min_latency, 0))
 
                     is_final = data["is_final"]
-                    speech_final = self.is_speech_final(buffer, data, time_silent)
+                    speech_final = self.classifier.classify_text(
+                        data["channel"]["alternatives"][0]["transcript"],
+                        return_as_int=False,
+                    )
+                    # if speech_final is False:
+                    #     self.logger.debug("Classifier returned false")
+                    #     break
+
+                    is_final = is_final or speech_final
+                    self.logger.debug(
+                        f"Probability you stopped speaking: {str(speech_final)}"
+                    )
                     top_choice = data["channel"]["alternatives"][0]
                     confidence = top_choice["confidence"]
 
-                    if top_choice["transcript"] and confidence > 0.0 and is_final:
+                    if is_final and top_choice["transcript"]:
+                        self.logger.debug(
+                            f"Received final transcript: {top_choice['transcript']}"
+                        )
                         buffer = f"{buffer} {top_choice['transcript']}"
 
-                    if speech_final:
                         self.output_queue.put_nowait(
                             Transcription(
-                                message=buffer, confidence=confidence, is_final=True
+                                message=buffer, confidence=confidence, is_final=is_final
                             )
                         )
                         buffer = ""
                         time_silent = 0
-                    elif top_choice["transcript"] and confidence > 0.0:
-                        self.output_queue.put_nowait(
-                            Transcription(
-                                message=buffer,
-                                confidence=confidence,
-                                is_final=False,
-                            )
+                    elif top_choice["transcript"] and data["is_final"]:
+                        self.logger.debug(
+                            "we should not be here, but we are, so we are going to send this"
                         )
-                        time_silent = self.calculate_time_silent(data)
+                        buffer = f"{buffer} {top_choice['transcript']}"
                     else:
                         time_silent += data["duration"]
+                    self.logger.debug(f"Time silent: {time_silent}")
                 self.logger.debug("Terminating Deepgram transcriber receiver")
 
             await asyncio.gather(sender(ws), receiver(ws))

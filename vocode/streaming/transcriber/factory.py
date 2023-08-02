@@ -5,6 +5,7 @@ from vocode.streaming.models.transcriber import (
     AssemblyAITranscriberConfig,
     AzureTranscriberConfig,
     DeepgramTranscriberConfig,
+    WhisperCPPTranscriberConfig,
     GoogleTranscriberConfig,
     RevAITranscriberConfig,
     TranscriberConfig,
@@ -15,6 +16,7 @@ from vocode.streaming.transcriber.deepgram_transcriber import DeepgramTranscribe
 from vocode.streaming.transcriber.google_transcriber import GoogleTranscriber
 from vocode.streaming.transcriber.rev_ai_transcriber import RevAITranscriber
 from vocode.streaming.transcriber.azure_transcriber import AzureTranscriber
+from vocode.streaming.transcriber.whisper_cpp_transcriber import WhisperCPPTranscriber
 
 
 class TranscriberFactory:
@@ -23,7 +25,9 @@ class TranscriberFactory:
         transcriber_config: TranscriberConfig,
         logger: Optional[logging.Logger] = None,
     ):
-        if isinstance(transcriber_config, DeepgramTranscriberConfig):
+        if isinstance(transcriber_config, WhisperCPPTranscriberConfig):
+            return WhisperCPPTranscriber(transcriber_config, logger=logger)
+        elif isinstance(transcriber_config, DeepgramTranscriberConfig):
             return DeepgramTranscriber(transcriber_config, logger=logger)
         elif isinstance(transcriber_config, GoogleTranscriberConfig):
             return GoogleTranscriber(transcriber_config, logger=logger)

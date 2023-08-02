@@ -134,12 +134,14 @@ class ElevenLabsSynthesizerConfig(
 RIME_DEFAULT_SPEAKER = "young_male_unmarked-1"
 RIME_DEFAULT_SAMPLE_RATE = 22050
 RIME_DEFAULT_BASE_URL = "https://rjmopratfrdjgmfmaios.functions.supabase.co/rime-tts"
+RIME_DEFAULT_USE_NEW_FORMAT = False
+
 
 class RimeSynthesizerConfig(SynthesizerConfig, type=SynthesizerType.RIME.value):
     speaker: str = RIME_DEFAULT_SPEAKER
     sampling_rate: int = RIME_DEFAULT_SAMPLE_RATE
     base_url: str = RIME_DEFAULT_BASE_URL
-
+    use_new_format: bool = RIME_DEFAULT_USE_NEW_FORMAT
 
 
 COQUI_DEFAULT_SPEAKER_ID = "ebe2db86-62a6-49a1-907a-9a1360d4416e"

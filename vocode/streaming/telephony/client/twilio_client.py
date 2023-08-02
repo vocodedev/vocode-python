@@ -1,5 +1,9 @@
+import logging
+import time
+
 from typing import Optional
 from twilio.rest import Client
+from xml.etree import ElementTree as ET
 
 from vocode.streaming.models.telephony import BaseCallConfig, TwilioConfig
 from vocode.streaming.telephony.client.base_telephony_client import BaseTelephonyClient
@@ -49,8 +53,29 @@ class TwilioClient(BaseTelephonyClient):
             base_url=self.base_url, call_id=conversation_id
         )
 
-    async def end_call(self, twilio_sid):
-        # TODO: Make this async. This is blocking.
+    def end_call(self, twilio_sid):
+        logging.info("I am ending the call now within the twilio client code")
+        current_call = self.twilio_client.calls(twilio_sid).fetch()
+
+        logging.info(f"The current parent call SID is {current_call.parent_call_sid}")
+        # if the call is part of a conference, we should just let it keep going
+        if current_call.parent_call_sid is not None:
+            return False
+
+        # fail-safe in case something is really wrong with the call and it still hasn't hung up
+        call = self.twilio_client.calls(twilio_sid).fetch()
+
+        # Check the call's duration
+        if (
+            call.duration is not None and int(call.duration) > 5 * 60
+        ):  # duration is in seconds
+            # The call has been going for more than 5 minutes - terminate it
+            response = self.twilio_client.calls(twilio_sid).update(status="completed")
+            return response.status == "completed"
+
+        time.sleep(
+            10
+        )  # for testing purposes only, if for some reason it just keeps going even when it's a conference
         response = self.twilio_client.calls(twilio_sid).update(status="completed")
         return response.status == "completed"
 
@@ -58,7 +83,7 @@ class TwilioClient(BaseTelephonyClient):
         self,
         to_phone: str,
         from_phone: str,
-        mobile_only: bool = True,
+        mobile_only: bool = False,  # originally to conform with California law; we leave as False for testing purposes
     ):
         if len(to_phone) < 8:
             raise ValueError("Invalid 'to' phone")

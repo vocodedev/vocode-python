@@ -31,6 +31,7 @@ class EndpointingType(str, Enum):
     BASE = "endpointing_base"
     TIME_BASED = "endpointing_time_based"
     PUNCTUATION_BASED = "endpointing_punctuation_based"
+    CLASSIFIER_BASED = "endpointing_classifier_based"
 
 
 class EndpointingConfig(TypedModel, type=EndpointingType.BASE):
@@ -45,6 +46,13 @@ class PunctuationEndpointingConfig(
     EndpointingConfig, type=EndpointingType.PUNCTUATION_BASED
 ):
     time_cutoff_seconds: float = 0.4
+
+
+class ClassifierEndpointingConfig(
+    EndpointingConfig, type=EndpointingType.CLASSIFIER_BASED
+):
+    use_delta: bool = False  # default is to just use .5 as the threshold
+    time_cutoff_seconds: float = 0.0
 
 
 class TranscriberConfig(TypedModel, type=TranscriberType.BASE.value):
@@ -109,6 +117,8 @@ class DeepgramTranscriberConfig(TranscriberConfig, type=TranscriberType.DEEPGRAM
     tier: Optional[str] = None
     version: Optional[str] = None
     keywords: Optional[list] = None
+    ##classifier endpointing config
+    endpointing_config: Optional[EndpointingConfig] = ClassifierEndpointingConfig()
 
 
 class GladiaTranscriberConfig(TranscriberConfig, type=TranscriberType.GLADIA.value):

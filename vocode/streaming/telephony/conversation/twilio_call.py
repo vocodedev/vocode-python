@@ -4,6 +4,7 @@ import base64
 from enum import Enum
 import json
 import logging
+import time
 from typing import Optional
 from vocode import getenv
 from vocode.streaming.agent.factory import AgentFactory
@@ -90,14 +91,24 @@ class TwilioCall(Call[TwilioOutputDevice]):
         twilio_call = twilio_call_ref.fetch()
 
         if self.twilio_config.record:
-            recordings_create_params = self.twilio_config.extra_params.get("recordings_create_params") if self.twilio_config.extra_params else None
-            recording = twilio_call_ref.recordings.create(
-                **recordings_create_params
-            ) if recordings_create_params else twilio_call_ref.recordings.create()
+            recordings_create_params = (
+                self.twilio_config.extra_params.get("recordings_create_params")
+                if self.twilio_config.extra_params
+                else None
+            )
+            recording = (
+                twilio_call_ref.recordings.create(**recordings_create_params)
+                if recordings_create_params
+                else twilio_call_ref.recordings.create()
+            )
             self.logger.info(f"Recording: {recording.sid}")
 
         if twilio_call.answered_by in ("machine_start", "fax"):
             self.logger.info(f"Call answered by {twilio_call.answered_by}")
+            logging.info(
+                "I am ending the call now within the twilio call code because it was answered by a machine"
+            )
+            time.sleep(4)
             twilio_call.update(status="completed")
         else:
             await self.wait_for_twilio_start(ws)
@@ -157,4 +168,3 @@ class TwilioCall(Call[TwilioOutputDevice]):
     def mark_terminated(self):
         super().mark_terminated()
         asyncio.create_task(self.telephony_client.end_call(self.twilio_sid))
-

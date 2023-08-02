@@ -8,6 +8,7 @@ from vocode.streaming.models.synthesizer import (
     SynthesizerConfig,
 )
 from vocode.streaming.models.transcriber import (
+    ClassifierEndpointingConfig,
     DeepgramTranscriberConfig,
     PunctuationEndpointingConfig,
     TranscriberConfig,
@@ -118,7 +119,7 @@ class TwilioCallConfig(BaseCallConfig, type=CallConfigType.TWILIO.value):
             chunk_size=DEFAULT_CHUNK_SIZE,
             model="phonecall",
             tier="nova",
-            endpointing_config=PunctuationEndpointingConfig(),
+            endpointing_config=ClassifierEndpointingConfig(),
         )
 
     @staticmethod
@@ -142,7 +143,7 @@ class VonageCallConfig(BaseCallConfig, type=CallConfigType.VONAGE.value):
             chunk_size=DEFAULT_CHUNK_SIZE,
             model="phonecall",
             tier="nova",
-            endpointing_config=PunctuationEndpointingConfig(),
+            endpointing_config=ClassifierEndpointingConfig(),
         )
 
     @staticmethod

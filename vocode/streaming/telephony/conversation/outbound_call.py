@@ -49,7 +49,7 @@ class OutboundCall:
         self.to_phone = to_phone
         self.digits = digits
         self.from_phone = from_phone
-        self.mobile_only = mobile_only
+        self.mobile_only = False  # originally to conform with California law; we leave as False for testing purposes
         self.config_manager = config_manager
         self.agent_config = agent_config
         self.conversation_id = conversation_id or create_conversation_id()
