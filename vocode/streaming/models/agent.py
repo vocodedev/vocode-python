@@ -70,6 +70,7 @@ class AgentConfig(TypedModel, type=AgentType.BASE.value):
     webhook_config: Optional[WebhookConfig] = None
     track_bot_sentiment: bool = False
     actions: Optional[List[ActionConfig]] = None
+    wake_up_word: Optional[str] = None
 
 
 class CutOffResponse(BaseModel):

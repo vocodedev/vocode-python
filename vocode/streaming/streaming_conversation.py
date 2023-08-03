@@ -129,6 +129,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
                     self.conversation.transcriber.get_transcriber_config().min_interrupt_confidence
                     or 0
                 )
+                and self.conversation.agent.get_agent_config().wake_up_word in transcription.message
             ):
                 self.conversation.current_transcription_is_interrupt = (
                     self.conversation.broadcast_interrupt()
