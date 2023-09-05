@@ -9,6 +9,7 @@ from vocode.streaming.models.actions import (
     ParametersType,
     ResponseType,
 )
+from vocode.streaming.utils.worker import EventTracker
 
 if TYPE_CHECKING:
     from vocode.streaming.utils.state_manager import ConversationStateManager
@@ -70,7 +71,7 @@ class BaseAction(Generic[ActionConfigType, ParametersType, ResponseType]):
         self,
         conversation_id: str,
         params: Dict[str, Any],
-        user_message_tracker: Optional[asyncio.Event] = None,
+        user_message_tracker: Optional[EventTracker] = None,
     ) -> ActionInput[ParametersType]:
         if "user_message" in params:
             del params["user_message"]

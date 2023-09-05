@@ -4,7 +4,7 @@ import asyncio
 import queue
 import random
 import threading
-from typing import Any, Awaitable, Callable, Generic, Optional, Tuple, TypeVar, cast
+from typing import Any, Awaitable, Callable, Generic, Optional, Tuple, TypeVar
 import logging
 import time
 import typing
@@ -15,7 +15,6 @@ from vocode.streaming.agent.bot_sentiment_analyser import (
     BotSentimentAnalyser,
 )
 from vocode.streaming.agent.chat_gpt_agent import ChatGPTAgent
-from vocode.streaming.models.actions import ActionInput
 from vocode.streaming.models.events import Sender
 from vocode.streaming.models.transcript import (
     Message,
@@ -23,13 +22,12 @@ from vocode.streaming.models.transcript import (
     TranscriptCompleteEvent,
 )
 from vocode.streaming.models.message import BaseMessage
-from vocode.streaming.models.transcriber import EndpointingConfig, TranscriberConfig
+from vocode.streaming.models.transcriber import TranscriberConfig
 from vocode.streaming.output_device.base_output_device import BaseOutputDevice
 from vocode.streaming.utils.conversation_logger_adapter import wrap_logger
 from vocode.streaming.utils.events_manager import EventsManager
-from vocode.streaming.utils.goodbye_model import GoodbyeModel
 
-from vocode.streaming.models.agent import ChatGPTAgentConfig, FillerAudioConfig
+from vocode.streaming.models.agent import FillerAudioConfig
 from vocode.streaming.models.synthesizer import (
     SentimentConfig,
 )
@@ -44,7 +42,6 @@ from vocode.streaming.agent.base_agent import (
     AgentResponseFillerAudio,
     AgentResponseMessage,
     AgentResponseStop,
-    AgentResponseType,
     BaseAgent,
     TranscriptionAgentInput,
 )
@@ -61,11 +58,11 @@ from vocode.streaming.transcriber.base_transcriber import (
 from vocode.streaming.utils.state_manager import ConversationStateManager
 from vocode.streaming.utils.worker import (
     AsyncQueueWorker,
+    EventTracker,
     InterruptibleAgentResponseWorker,
     InterruptibleEvent,
     InterruptibleEventFactory,
-    InterruptibleAgentResponseEvent,
-    InterruptibleWorker,
+    InterruptibleTrackedEvent,
 )
 
 OutputDeviceType = TypeVar("OutputDeviceType", bound=BaseOutputDevice)
@@ -73,8 +70,13 @@ OutputDeviceType = TypeVar("OutputDeviceType", bound=BaseOutputDevice)
 
 class StreamingConversation(Generic[OutputDeviceType]):
     class QueueingInterruptibleEventFactory(InterruptibleEventFactory):
-        def __init__(self, conversation: "StreamingConversation"):
+        def __init__(
+            self,
+            conversation: "StreamingConversation",
+            time_tracked_events: bool = False,
+        ):
             self.conversation = conversation
+            self.time_tracked_events = time_tracked_events
 
         def create_interruptible_event(
             self, payload: Any, is_interruptible: bool = True
@@ -85,16 +87,18 @@ class StreamingConversation(Generic[OutputDeviceType]):
             self.conversation.interruptible_events.put_nowait(interruptible_event)
             return interruptible_event
 
-        def create_interruptible_agent_response_event(
+        def create_interruptible_tracked_event(
             self,
             payload: Any,
             is_interruptible: bool = True,
-            agent_response_tracker: Optional[asyncio.Event] = None,
-        ) -> InterruptibleAgentResponseEvent:
-            interruptible_event = super().create_interruptible_agent_response_event(
+            event_tracker: Optional[EventTracker] = None,
+            span_name: Optional[str] = None,
+        ) -> InterruptibleTrackedEvent:
+            interruptible_event = super().create_interruptible_tracked_event(
                 payload,
                 is_interruptible=is_interruptible,
-                agent_response_tracker=agent_response_tracker,
+                event_tracker=event_tracker,
+                span_name=span_name,
             )
             self.conversation.interruptible_events.put_nowait(interruptible_event)
             return interruptible_event
@@ -106,7 +110,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         def __init__(
             self,
             input_queue: asyncio.Queue[Transcription],
-            output_queue: asyncio.Queue[InterruptibleEvent[AgentInput]],
+            output_queue: asyncio.Queue[InterruptibleTrackedEvent[AgentInput]],
             conversation: "StreamingConversation",
             interruptible_event_factory: InterruptibleEventFactory,
         ):
@@ -144,12 +148,15 @@ class StreamingConversation(Generic[OutputDeviceType]):
             self.conversation.is_human_speaking = not transcription.is_final
             if transcription.is_final:
                 # we use getattr here to avoid the dependency cycle between VonageCall and StreamingConversation
-                event = self.interruptible_event_factory.create_interruptible_event(
-                    TranscriptionAgentInput(
-                        transcription=transcription,
-                        conversation_id=self.conversation.id,
-                        vonage_uuid=getattr(self.conversation, "vonage_uuid", None),
-                        twilio_sid=getattr(self.conversation, "twilio_sid", None),
+                event = (
+                    self.interruptible_event_factory.create_interruptible_tracked_event(
+                        TranscriptionAgentInput(
+                            transcription=transcription,
+                            conversation_id=self.conversation.id,
+                            vonage_uuid=getattr(self.conversation, "vonage_uuid", None),
+                            twilio_sid=getattr(self.conversation, "twilio_sid", None),
+                        ),
+                        span_name="transcription_agent_input",
                     )
                 )
                 self.output_queue.put_nowait(event)
@@ -163,7 +170,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
 
         def __init__(
             self,
-            input_queue: asyncio.Queue[InterruptibleAgentResponseEvent[FillerAudio]],
+            input_queue: asyncio.Queue[InterruptibleTrackedEvent[FillerAudio]],
             conversation: "StreamingConversation",
         ):
             super().__init__(input_queue=input_queue)
@@ -182,14 +189,14 @@ class StreamingConversation(Generic[OutputDeviceType]):
                 )
                 return
             if self.interruptible_event and isinstance(
-                self.interruptible_event, InterruptibleAgentResponseEvent
+                self.interruptible_event, InterruptibleTrackedEvent
             ):
-                await self.interruptible_event.agent_response_tracker.wait()
+                await self.interruptible_event.event_tracker.wait()
 
         def interrupt_current_filler_audio(self):
             return self.interruptible_event and self.interruptible_event.interrupt()
 
-        async def process(self, item: InterruptibleAgentResponseEvent[FillerAudio]):
+        async def process(self, item: InterruptibleTrackedEvent[FillerAudio]):
             try:
                 filler_audio = item.payload
                 assert self.conversation.filler_audio_config is not None
@@ -208,7 +215,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
                     filler_audio.seconds_per_chunk,
                     started_event=self.filler_audio_started_event,
                 )
-                item.agent_response_tracker.set()
+                item.event_tracker.set()
             except asyncio.CancelledError:
                 pass
 
@@ -217,9 +224,9 @@ class StreamingConversation(Generic[OutputDeviceType]):
 
         def __init__(
             self,
-            input_queue: asyncio.Queue[InterruptibleAgentResponseEvent[AgentResponse]],
+            input_queue: asyncio.Queue[InterruptibleTrackedEvent[AgentResponse]],
             output_queue: asyncio.Queue[
-                InterruptibleAgentResponseEvent[Tuple[BaseMessage, SynthesisResult]]
+                InterruptibleTrackedEvent[Tuple[BaseMessage, SynthesisResult]]
             ],
             conversation: "StreamingConversation",
             interruptible_event_factory: InterruptibleEventFactory,
@@ -240,7 +247,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
                 * TEXT_TO_SPEECH_CHUNK_SIZE_SECONDS
             )
 
-        def send_filler_audio(self, agent_response_tracker: Optional[asyncio.Event]):
+        def send_filler_audio(self, event_tracker: Optional[EventTracker]):
             assert self.conversation.filler_audio_worker is not None
             self.conversation.logger.debug("Sending filler audio")
             if self.conversation.synthesizer.filler_audios:
@@ -248,10 +255,12 @@ class StreamingConversation(Generic[OutputDeviceType]):
                     self.conversation.synthesizer.filler_audios
                 )
                 self.conversation.logger.debug(f"Chose {filler_audio.message.text}")
-                event = self.interruptible_event_factory.create_interruptible_agent_response_event(
-                    filler_audio,
-                    is_interruptible=filler_audio.is_interruptible,
-                    agent_response_tracker=agent_response_tracker,
+                event = (
+                    self.interruptible_event_factory.create_interruptible_tracked_event(
+                        filler_audio,
+                        is_interruptible=filler_audio.is_interruptible,
+                        event_tracker=event_tracker,
+                    )
                 )
                 self.conversation.filler_audio_worker.consume_nonblocking(event)
             else:
@@ -259,7 +268,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
                     "No filler audio available for synthesizer"
                 )
 
-        async def process(self, item: InterruptibleAgentResponseEvent[AgentResponse]):
+        async def process(self, item: InterruptibleTrackedEvent[AgentResponse]):
             if not self.conversation.synthesis_enabled:
                 self.conversation.logger.debug(
                     "Synthesis disabled, not synthesizing speech"
@@ -268,11 +277,11 @@ class StreamingConversation(Generic[OutputDeviceType]):
             try:
                 agent_response = item.payload
                 if isinstance(agent_response, AgentResponseFillerAudio):
-                    self.send_filler_audio(item.agent_response_tracker)
+                    self.send_filler_audio(item.event_tracker)
                     return
                 if isinstance(agent_response, AgentResponseStop):
                     self.conversation.logger.debug("Agent requested to stop")
-                    item.agent_response_tracker.set()
+                    item.event_tracker.set()
                     await self.conversation.terminate()
                     return
 
@@ -292,10 +301,10 @@ class StreamingConversation(Generic[OutputDeviceType]):
                     self.chunk_size,
                     bot_sentiment=self.conversation.bot_sentiment,
                 )
-                self.produce_interruptible_agent_response_event_nonblocking(
+                self.produce_interruptible_tracked_event_nonblocking(
                     (agent_response_message.message, synthesis_result),
                     is_interruptible=item.is_interruptible,
-                    agent_response_tracker=item.agent_response_tracker,
+                    event_tracker=item.event_tracker,
                 )
             except asyncio.CancelledError:
                 pass
@@ -306,7 +315,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         def __init__(
             self,
             input_queue: asyncio.Queue[
-                InterruptibleAgentResponseEvent[Tuple[BaseMessage, SynthesisResult]]
+                InterruptibleTrackedEvent[Tuple[BaseMessage, SynthesisResult]]
             ],
             conversation: "StreamingConversation",
         ):
@@ -316,7 +325,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
 
         async def process(
             self,
-            item: InterruptibleAgentResponseEvent[Tuple[BaseMessage, SynthesisResult]],
+            item: InterruptibleTrackedEvent[Tuple[BaseMessage, SynthesisResult]],
         ):
             try:
                 message, synthesis_result = item.payload
@@ -342,7 +351,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
                     message=transcript_message,
                     conversation_id=self.conversation.id,
                 )
-                item.agent_response_tracker.set()
+                item.event_tracker.set()
                 self.conversation.logger.debug("Message sent: {}".format(message_sent))
                 if cut_off:
                     self.conversation.agent.update_last_bot_message_on_cut_off(
@@ -393,10 +402,10 @@ class StreamingConversation(Generic[OutputDeviceType]):
         )
         self.agent.set_interruptible_event_factory(self.interruptible_event_factory)
         self.synthesis_results_queue: asyncio.Queue[
-            InterruptibleAgentResponseEvent[Tuple[BaseMessage, SynthesisResult]]
+            InterruptibleTrackedEvent[Tuple[BaseMessage, SynthesisResult]]
         ] = asyncio.Queue()
         self.filler_audio_queue: asyncio.Queue[
-            InterruptibleAgentResponseEvent[FillerAudio]
+            InterruptibleTrackedEvent[FillerAudio]
         ] = asyncio.Queue()
         self.state_manager = self.create_state_manager()
         self.transcriptions_worker = self.TranscriptionsWorker(
@@ -508,16 +517,16 @@ class StreamingConversation(Generic[OutputDeviceType]):
     async def send_initial_message(self, initial_message: BaseMessage):
         # TODO: configure if initial message is interruptible
         self.transcriber.mute()
-        initial_message_tracker = asyncio.Event()
+        initial_message_tracker = EventTracker(span_name="initial_message")
         agent_response_event = (
-            self.interruptible_event_factory.create_interruptible_agent_response_event(
+            self.interruptible_event_factory.create_interruptible_tracked_event(
                 AgentResponseMessage(message=initial_message),
                 is_interruptible=False,
-                agent_response_tracker=initial_message_tracker,
+                event_tracker=initial_message_tracker,
             )
         )
         self.agent_responses_worker.consume_nonblocking(agent_response_event)
-        await initial_message_tracker.wait()
+        await initial_message_tracker.done_event.wait()
         self.transcriber.unmute()
 
     async def check_for_idle(self):

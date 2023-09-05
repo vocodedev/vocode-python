@@ -12,6 +12,7 @@ from vocode.streaming.utils.state_manager import ConversationStateManager
 from vocode.streaming.utils.worker import (
     InterruptibleEvent,
     InterruptibleEventFactory,
+    InterruptibleTrackedEvent,
     InterruptibleWorker,
 )
 
@@ -20,7 +21,7 @@ class ActionsWorker(InterruptibleWorker):
     def __init__(
         self,
         input_queue: asyncio.Queue[InterruptibleEvent[ActionInput]],
-        output_queue: asyncio.Queue[InterruptibleEvent[AgentInput]],
+        output_queue: asyncio.Queue[InterruptibleTrackedEvent[AgentInput]],
         interruptible_event_factory: InterruptibleEventFactory = InterruptibleEventFactory(),
         action_factory: ActionFactory = ActionFactory(),
     ):
@@ -41,7 +42,7 @@ class ActionsWorker(InterruptibleWorker):
         action = self.action_factory.create_action(action_input.action_config)
         action.attach_conversation_state_manager(self.conversation_state_manager)
         action_output = await action.run(action_input)
-        self.produce_interruptible_event_nonblocking(
+        self.produce_interruptible_tracked_event_nonblocking(
             ActionResultAgentInput(
                 conversation_id=action_input.conversation_id,
                 action_input=action_input,
@@ -53,5 +54,6 @@ class ActionsWorker(InterruptibleWorker):
                 if isinstance(action_input, TwilioPhoneCallActionInput)
                 else None,
                 is_quiet=action.quiet,
-            )
+            ),
+            span_name="action_result_agent_input",
         )

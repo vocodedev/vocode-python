@@ -3,12 +3,17 @@ from __future__ import annotations
 import asyncio
 import threading
 import janus
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from typing import TypeVar, Generic
 import logging
+from opentelemetry import trace
+from opentelemetry.trace import Span
+
+from pydantic import BaseModel, Field
 
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 WorkerInputType = TypeVar("WorkerInputType")
 
@@ -132,16 +137,26 @@ class InterruptibleEvent(Generic[Payload]):
         return self.is_interruptible and self.interruption_event.is_set()
 
 
-class InterruptibleAgentResponseEvent(InterruptibleEvent[Payload]):
+class EventTracker:
+    def __init__(self, span_name: str):
+        self.done_event = asyncio.Event()
+        self.span = tracer.start_span(span_name)
+
+    def set(self):
+        self.done_event.set()
+        self.span.end()
+
+
+class InterruptibleTrackedEvent(InterruptibleEvent[Payload]):
     def __init__(
         self,
         payload: Payload,
-        agent_response_tracker: asyncio.Event,
+        event_tracker: EventTracker,
         is_interruptible: bool = True,
         interruption_event: Optional[threading.Event] = None,
     ):
         super().__init__(payload, is_interruptible, interruption_event)
-        self.agent_response_tracker = agent_response_tracker
+        self.event_tracker = event_tracker
 
 
 class InterruptibleEventFactory:
@@ -150,16 +165,18 @@ class InterruptibleEventFactory:
     ) -> InterruptibleEvent:
         return InterruptibleEvent(payload, is_interruptible=is_interruptible)
 
-    def create_interruptible_agent_response_event(
+    def create_interruptible_tracked_event(
         self,
         payload: Any,
         is_interruptible: bool = True,
-        agent_response_tracker: Optional[asyncio.Event] = None,
-    ) -> InterruptibleAgentResponseEvent:
-        return InterruptibleAgentResponseEvent(
+        event_tracker: Optional[EventTracker] = None,
+        span_name: Optional[str] = None,
+    ) -> InterruptibleTrackedEvent:
+        return InterruptibleTrackedEvent(
             payload,
             is_interruptible=is_interruptible,
-            agent_response_tracker=agent_response_tracker or asyncio.Event(),
+            event_tracker=event_tracker
+            or EventTracker(span_name or self.__class__.__name__),
         )
 
 
@@ -191,17 +208,20 @@ class InterruptibleWorker(AsyncWorker[InterruptibleEventType]):
         )
         return super().produce_nonblocking(interruptible_event)
 
-    def produce_interruptible_agent_response_event_nonblocking(
+    def produce_interruptible_tracked_event_nonblocking(
         self,
         item: Any,
         is_interruptible: bool = True,
-        agent_response_tracker: Optional[asyncio.Event] = None,
+        event_tracker: Optional[EventTracker] = None,
+        span_name: Optional[str] = None,
     ):
+        assert event_tracker or span_name
         interruptible_utterance_event = (
-            self.interruptible_event_factory.create_interruptible_agent_response_event(
+            self.interruptible_event_factory.create_interruptible_tracked_event(
                 item,
                 is_interruptible=is_interruptible,
-                agent_response_tracker=agent_response_tracker or asyncio.Event(),
+                event_tracker=event_tracker
+                or EventTracker(span_name or self.__class__.__name__),
             )
         )
         return super().produce_nonblocking(interruptible_utterance_event)
@@ -246,7 +266,5 @@ class InterruptibleWorker(AsyncWorker[InterruptibleEventType]):
         return False
 
 
-class InterruptibleAgentResponseWorker(
-    InterruptibleWorker[InterruptibleAgentResponseEvent]
-):
+class InterruptibleAgentResponseWorker(InterruptibleWorker[InterruptibleTrackedEvent]):
     pass

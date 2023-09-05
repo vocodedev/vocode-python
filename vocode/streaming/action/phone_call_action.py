@@ -9,6 +9,7 @@ from vocode.streaming.models.actions import (
     TwilioPhoneCallActionInput,
     VonagePhoneCallActionInput,
 )
+from vocode.streaming.utils.worker import EventTracker
 
 
 class VonagePhoneCallAction(BaseAction[ActionConfigType, ParametersType, ResponseType]):
@@ -17,7 +18,7 @@ class VonagePhoneCallAction(BaseAction[ActionConfigType, ParametersType, Respons
         conversation_id: str,
         params: Dict[str, Any],
         vonage_uuid: str,
-        user_message_tracker: Optional[asyncio.Event] = None,
+        user_message_tracker: Optional[EventTracker] = None,
     ) -> VonagePhoneCallActionInput[ParametersType]:
         if "user_message" in params:
             del params["user_message"]
@@ -40,7 +41,7 @@ class TwilioPhoneCallAction(BaseAction[ActionConfigType, ParametersType, Respons
         conversation_id: str,
         params: Dict[str, Any],
         twilio_sid: str,
-        user_message_tracker: Optional[asyncio.Event] = None,
+        user_message_tracker: Optional[EventTracker] = None,
     ) -> TwilioPhoneCallActionInput[ParametersType]:
         if "user_message" in params:
             del params["user_message"]

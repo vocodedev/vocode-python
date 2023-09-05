@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Optional
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.transcriber import EndpointingConfig
 from vocode.streaming.agent.base_agent import AgentResponseMessage
+from vocode.streaming.utils.worker import EventTracker
 
 if TYPE_CHECKING:
     from vocode.streaming.streaming_conversation import StreamingConversation
@@ -42,16 +43,16 @@ class ConversationStateManager:
 
     def send_bot_message(self, message: BaseMessage) -> asyncio.Event:
         # returns an asyncio.Event that will be set when the agent has finished uttering the message
-        agent_response_tracker = asyncio.Event()
-        self._conversation.agent.produce_interruptible_agent_response_event_nonblocking(
+        event_tracker = EventTracker("action_bot_message")
+        self._conversation.agent.produce_interruptible_tracked_event_nonblocking(
             item=AgentResponseMessage(
                 message=message,
                 is_interruptible=False,
             ),
             is_interruptible=False,
-            agent_response_tracker=agent_response_tracker,
+            event_tracker=event_tracker,
         )
-        return agent_response_tracker
+        return event_tracker.done_event
 
 
 class VonageCallStateManager(ConversationStateManager):

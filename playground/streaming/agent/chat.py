@@ -15,7 +15,7 @@ from vocode.streaming.models.actions import (
 from vocode.streaming.models.agent import ChatGPTAgentConfig
 from vocode.streaming.models.transcript import Transcript
 from vocode.streaming.utils.state_manager import ConversationStateManager
-from vocode.streaming.utils.worker import InterruptibleAgentResponseEvent
+from vocode.streaming.utils.worker import InterruptibleTrackedEvent
 
 load_dotenv()
 
@@ -155,11 +155,11 @@ async def agent_main():
     agent.attach_transcript(transcript)
     if agent.agent_config.initial_message is not None:
         agent.output_queue.put_nowait(
-            InterruptibleAgentResponseEvent(
+            InterruptibleTrackedEvent(
                 payload=AgentResponseMessage(
                     message=agent.agent_config.initial_message
                 ),
-                agent_response_tracker=asyncio.Event(),
+                event_tracker=asyncio.Event(),
             )
         )
     agent.start()
