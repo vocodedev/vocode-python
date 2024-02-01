@@ -52,11 +52,10 @@ class ChatAnthropicAgent(RespondAgent[ChatAnthropicAgentConfig]):
         )
 
         self.llm = ChatAnthropic(
-            model=agent_config.model_name,
+            model=agent_config.model_name,  # type: ignore
             anthropic_api_key=anthropic_api_key,
         )
 
-        # streaming not well supported by langchain, so we will connect directly
         self.anthropic_client = (
             anthropic.AsyncAnthropic(api_key=anthropic_api_key)
             if agent_config.generate_responses

@@ -9,7 +9,7 @@ This project uses [Poetry](https://python-poetry.org/) as a dependency manager. 
 To install requirements:
 
 ```bash
-poetry install
+poetry install --extras all
 poetry run pre-commit install
 ```
 

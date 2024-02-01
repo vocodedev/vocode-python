@@ -53,9 +53,11 @@ class ThreadAsyncWorker(AsyncWorker[WorkerInputType]):
         self.worker_thread: Optional[threading.Thread] = None
         self.input_janus_queue: janus.Queue[WorkerInputType] = janus.Queue()
         self.output_janus_queue: janus.Queue = janus.Queue()
+        self._stop_event = threading.Event()  # create a stop event
 
-    def start(self) -> asyncio.Task:
-        self.worker_thread = threading.Thread(target=self._run_loop)
+    def start(self, thread_name="worker_thread") -> asyncio.Task:
+        self.worker_thread = threading.Thread(target=self._run_loop, name=thread_name)
+        self.worker_thread.daemon = True
         self.worker_thread.start()
         self.worker_task = asyncio.create_task(self.run_thread_forwarding())
         return self.worker_task
@@ -70,12 +72,12 @@ class ThreadAsyncWorker(AsyncWorker[WorkerInputType]):
             return
 
     async def _forward_to_thread(self):
-        while True:
+        while not self._stop_event.is_set():  # check stop event before getting new item
             item = await self.input_queue.get()
             self.input_janus_queue.async_q.put_nowait(item)
 
     async def _forward_from_thead(self):
-        while True:
+        while not self._stop_event.is_set():  # check stop event before getting new item
             item = await self.output_janus_queue.async_q.get()
             self.output_queue.put_nowait(item)
 
@@ -83,7 +85,9 @@ class ThreadAsyncWorker(AsyncWorker[WorkerInputType]):
         raise NotImplementedError
 
     def terminate(self):
-        return super().terminate()
+        self._stop_event.set()  # set stop event
+        self.worker_task.cancel()
+        super().terminate()
 
 
 class AsyncQueueWorker(AsyncWorker):

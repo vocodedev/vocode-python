@@ -26,7 +26,7 @@ typecheck_diff:
 	poetry run mypy $(PYTHON_FILES)
 
 test:
-	poetry run pytest
+	poetry run python -m pytest -v tests
 
 help:
 	@echo "Usage: make <target>"

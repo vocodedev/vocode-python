@@ -150,3 +150,9 @@ if __name__ == "__main__":
 # 🌱 Documentation
 
 [docs.vocode.dev](https://docs.vocode.dev/)
+
+
+# Recording audio input (human speech):
+
+To record input audio stream to a wav file to /recordings folder, you can see examples in: `quickstarts/streaming_conversation_audio_recorded.py` and
+`playground/streaming/transcribe/transcribe.py`

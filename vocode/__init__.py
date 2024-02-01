@@ -1,5 +1,5 @@
 import os
-
+from vocode.streaming.pubsub.base_pubsub import PubSubManager
 
 environment = {}
 
@@ -15,3 +15,6 @@ def getenv(key, default=None):
 
 api_key = getenv("VOCODE_API_KEY")
 base_url = getenv("VOCODE_BASE_URL", "api.vocode.dev")
+
+
+pubsub = PubSubManager()

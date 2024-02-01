@@ -1,3 +1,4 @@
+recordings/
 venv*/
 __pycache__/
 .env
@@ -9,5 +10,5 @@ credentials.json
 **/call_transcripts/*.txt
 benchmark_results/
 private.key
-dump.rdb
 .idea
+dump.rdb
