@@ -1,4 +1,5 @@
 import queue
+import audioop
 from typing import Optional
 import sounddevice as sd
 import numpy as np
@@ -42,6 +43,10 @@ class SpeakerOutput(BaseOutputDevice):
         outdata[:, 0] = data
 
     def consume_nonblocking(self, chunk):
+        if self.audio_encoding == AudioEncoding.MULAW:
+            # Decode MULAW to linear PCM
+            chunk = audioop.ulaw2lin(chunk, 2)
+
         chunk_arr = np.frombuffer(chunk, dtype=np.int16)
         for i in range(0, chunk_arr.shape[0], self.blocksize):
             block = np.zeros(self.blocksize, dtype=np.int16)
