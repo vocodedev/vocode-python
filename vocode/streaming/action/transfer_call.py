@@ -1,10 +1,10 @@
-import os
 import aiohttp
 
 from aiohttp import BasicAuth
 from typing import Type
 from pydantic.v1 import BaseModel, Field
 
+from vocode import getenv
 from vocode.streaming.action.phone_call_action import TwilioPhoneCallAction
 from vocode.streaming.models.actions import (
     ActionConfig,
@@ -36,8 +36,8 @@ class TransferCall(
     response_type: Type[TransferCallResponse] = TransferCallResponse
 
     async def transfer_call(self, twilio_call_sid, to_phone):
-        twilio_account_sid = os.environ["TWILIO_ACCOUNT_SID"]
-        twilio_auth_token = os.environ["TWILIO_AUTH_TOKEN"]
+        twilio_account_sid = getenv("TWILIO_ACCOUNT_SID")
+        twilio_auth_token = getenv("TWILIO_AUTH_TOKEN")
 
         url = "https://api.twilio.com/2010-04-01/Accounts/{twilio_account_sid}/Calls/{twilio_auth_token}.json".format(
             twilio_account_sid=twilio_account_sid, twilio_auth_token=twilio_call_sid
