@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "vocode-discord-bot"
+version = "0.1.0"
+description = ""
+authors = ["Hayden Housen <hayden@haydenhousen.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.12"
+py-cord = {extras = ["voice"], version = "^2.4.1"}
+vocode = "^0.1.110"
+google-cloud-speech = "^2.20.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
