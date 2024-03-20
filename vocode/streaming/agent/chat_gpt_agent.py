@@ -21,6 +21,7 @@ from vocode.streaming.agent.utils import (
 )
 from vocode.streaming.models.events import Sender
 from vocode.streaming.models.transcript import Transcript
+from vocode.streaming.utils.goodbye_model import GoodbyeModel
 from vocode.streaming.vector_db.factory import VectorDBFactory
 
 
@@ -32,9 +33,13 @@ class ChatGPTAgent(RespondAgent[ChatGPTAgentConfig]):
         logger: Optional[logging.Logger] = None,
         openai_api_key: Optional[str] = None,
         vector_db_factory=VectorDBFactory(),
+        goodbye_model: Optional[GoodbyeModel] = None,
     ):
         super().__init__(
-            agent_config=agent_config, action_factory=action_factory, logger=logger
+            agent_config=agent_config,
+            action_factory=action_factory,
+            logger=logger,
+            goodbye_model=goodbye_model,
         )
         if agent_config.azure_params:
             openai.api_type = agent_config.azure_params.api_type

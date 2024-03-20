@@ -139,6 +139,7 @@ class BaseAgent(AbstractAgent[AgentConfigType], InterruptibleWorker):
         action_factory: ActionFactory = ActionFactory(),
         interruptible_event_factory: InterruptibleEventFactory = InterruptibleEventFactory(),
         logger: Optional[logging.Logger] = None,
+        goodbye_model: Optional[GoodbyeModel] = None
     ):
         self.input_queue: asyncio.Queue[
             InterruptibleEvent[AgentInput]
@@ -160,12 +161,11 @@ class BaseAgent(AbstractAgent[AgentConfigType], InterruptibleWorker):
         self.logger = logger or logging.getLogger(__name__)
         self.goodbye_model = None
         if self.agent_config.end_conversation_on_goodbye:
-            self.goodbye_model = GoodbyeModel()
+            self.goodbye_model = goodbye_model or GoodbyeModel()
             self.goodbye_model_initialize_task = asyncio.create_task(
                 self.goodbye_model.initialize_embeddings()
             )
         self.transcript: Optional[Transcript] = None
-
         self.functions = self.get_functions() if self.agent_config.actions else None
         self.is_muted = False
 

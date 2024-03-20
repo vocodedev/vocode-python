@@ -6,6 +6,9 @@ import numpy as np
 import requests
 
 from vocode import getenv
+from vocode.streaming.telephony.config_manager.redis_config_manager import (
+    RedisConfigManager,
+)
 
 SIMILARITY_THRESHOLD = 0.9
 EMBEDDING_SIZE = 1536
@@ -28,19 +31,38 @@ class GoodbyeModel:
             os.path.dirname(__file__), "goodbye_embeddings"
         ),
         openai_api_key: Optional[str] = None,
+        config_manager: Optional[RedisConfigManager] = None,
+        goodbye_phrases: list[str] = GOODBYE_PHRASES,
     ):
         openai.api_key = openai_api_key or getenv("OPENAI_API_KEY")
         if not openai.api_key:
             raise ValueError("OPENAI_API_KEY must be set in environment or passed in")
         self.embeddings_cache_path = embeddings_cache_path
         self.goodbye_embeddings: Optional[np.ndarray] = None
+        self.config_manager = config_manager
+        self.goodbye_phrases = goodbye_phrases
 
     async def initialize_embeddings(self):
         self.goodbye_embeddings = await self.load_or_create_embeddings(
             f"{self.embeddings_cache_path}/goodbye_embeddings.npy"
         )
 
-    async def load_or_create_embeddings(self, path):
+    async def load_or_create_embeddings(self, path, key: str = "default"):
+        if self.config_manager and key:
+            return self._from_redis(key)
+        return self._from_path(path)
+
+    async def _from_redis(self, key: str = "default"):
+        if self.config_manager is None:
+            return None
+        goodbye_embeddings = await self.config_manager.get_goodbye_embeddings(key)
+        if goodbye_embeddings:
+            return goodbye_embeddings
+        embeddings = await self.create_embeddings()
+        await self.config_manager.save_goodbye_embeddings(key, embeddings)
+        return embeddings
+
+    async def _from_path(self, path):
         if os.path.exists(path):
             return np.load(path)
         else:
@@ -51,8 +73,8 @@ class GoodbyeModel:
     async def create_embeddings(self):
         print("Creating embeddings...")
         size = EMBEDDING_SIZE
-        embeddings = np.empty((size, len(GOODBYE_PHRASES)))
-        for i, goodbye_phrase in enumerate(GOODBYE_PHRASES):
+        embeddings = np.empty((size, len(self.goodbye_phrases)))
+        for i, goodbye_phrase in enumerate(self.goodbye_phrases):
             embeddings[:, i] = await self.create_embedding(goodbye_phrase)
         return embeddings
 
