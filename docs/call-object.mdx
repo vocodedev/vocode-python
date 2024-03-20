@@ -1,4 +1,118 @@
 ---
 title: "Call Object"
-description: "🚧 Under construction"
+description: "The `Call` object represents a phone call in Vocode. It handles the audio streaming, transcription, and synthesis for a conversation over telephony."
 ---
+
+## Constructor
+
+<ParamField body="from_phone" type="str">
+  The phone number making the call. For inbound calls this will be the caller's number. For outbound calls this will be your Twilio or Vonage number.
+</ParamField>
+
+<ParamField body="to_phone" type="str">
+  The phone number receiving the call. For inbound calls this will be your Twilio or Vonage number. For outbound calls this will be the number you are calling.
+</ParamField>
+
+<ParamField body="base_url" type="str">
+  The base URL of your telephony server. See [this link](/open-source/telephony) for how to set one up.
+</ParamField>
+
+<ParamField body="config_manager" type="BaseConfigManager">
+  The configuration manager which stores information about active calls.
+</ParamField>
+
+<ParamField body="output_device" type="TwilioOutputDevice|VonageOutputDevice">
+  The output device for sending audio to the telephony provider.
+</ParamField>
+
+<ParamField body="agent_config" type="AgentConfig">
+  The agent configuration determining the NLP model and parameters.
+</ParamField>
+
+<ParamField body="transcriber_config" type="TranscriberConfig">
+  The transcriber configuration determining the ASR model and parameters.
+</ParamField>
+
+<ParamField body="synthesizer_config" type="SynthesizerConfig">
+  The synthesizer configuration determining the TTS model and parameters.
+</ParamField>
+
+<ParamField body="conversation_id" type="Optional[str]">
+  Optional existing conversation ID to use. If not provided, one will be generated.
+</ParamField>
+
+<ParamField body="transcriber_factory" type="TranscriberFactory">
+  Transcriber factory for creating the ASR instance. Defaults to the global factory.
+</ParamField>
+
+<ParamField body="agent_factory" type="AgentFactory">
+  Agent factory for creating the NLP instance. Defaults to the global factory.
+</ParamField>
+
+<ParamField body="synthesizer_factory" type="SynthesizerFactory">
+  Synthesizer factory for creating the TTS instance. Defaults to the global factory.
+</ParamField>
+
+<ParamField body="events_manager" type="Optional[EventsManager]">
+  Optional events manager for publishing call events.
+</ParamField>
+
+<ParamField body="logger" type="Optional[logging.Logger]">
+  Optional logger instance.
+</ParamField>
+
+## Methods
+
+### attach_ws
+
+<ParamField body="ws" type="WebSocket">
+  The WebSocket connection to the telephony provider.
+</ParamField>
+
+Attaches the WebSocket to the `Call` instance to send and receive audio.
+
+### attach_ws_and_start
+
+<ParamField body="ws" type="WebSocket">
+  The WebSocket connection to the telephony provider.
+</ParamField>
+
+Attaches the WebSocket and handles the initial connection handshake before starting the audio streaming.
+
+### tear_down
+
+Performs clean up when the call ends, including publishing a `PhoneCallEndedEvent` and terminating the audio streaming.
+
+### send_audio
+
+<ParamField body="audio" type="bytes">
+  The synthesized audio to send to the telephony provider.
+</ParamField>
+
+Sends synthesized audio through the attached WebSocket.
+
+### receive_audio
+
+<ParamField body="audio" type="bytes">
+  The audio received from the telephony provider.
+</ParamField>
+
+Handles incoming audio by passing it to the transcriber.
+
+## Properties
+
+### id
+
+The conversation ID for this call.
+
+### active
+
+Whether the call is currently active.
+
+### logger
+
+The `logging.Logger` instance.
+
+### events_manager
+
+The `EventsManager` instance for publishing call events.

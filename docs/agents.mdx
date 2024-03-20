@@ -1,10 +1,171 @@
 ---
 title: "Agents"
-description: "🚧 Under construction"
+description: "Agents are components in the Vocode conversation pipeline that generate responses to human input. They take in transcriptions from the transcriber and output responses that are synthesized into speech by the synthesizer and played to the human."
 ---
+Some examples of agents in Vocode are:
 
-# What are agents
+- `LLMAgent`: Generates responses using a large language model like GPT-3
+- `ChatGPTAgent`: A specific implementation of an LLMAgent using OpenAI's GPT models 
+- `EchoAgent`: Simply echoes back the human's input
+- `InformationRetrievalAgent`: Retrieves information from documents to generate responses
 
-# How to configure an agent
+Agents can be stateful, maintaining conversation history and context to generate coherent responses. They can also take actions like making API calls based on the conversation.
 
-# API Schema
+## How to configure an agent
+
+Agents are configured by creating a configuration object specific to that agent, like `LLMAgentConfig` or `EchoAgentConfig`, and passing it when constructing the agent.
+
+Here is an example configuring and using the `LLMAgent` (make sure to set the `OPENAI_API_KEY` environment variable):
+
+```python
+from vocode.streaming.agent.llm_agent import LLMAgent
+from vocode.streaming.models.agent import LLMAgentConfig
+
+agent_config = LLMAgentConfig(
+    model_name="text-davinci-003",
+    temperature=0.5,
+    max_tokens=100,
+    prompt_preamble="<instructions here>",
+)
+
+agent = LLMAgent(agent_config)
+```
+
+The key parameters when configuring an agent are:
+
+- `model_name` - The name of the LLMs to use like GPT-3's davinci
+- `temperature` - Controls randomness, lower values are more deterministic
+- `max_tokens` - The maximum number of tokens to generate per response
+
+Agents can also be configured with:
+
+- `actions` - Allow calling external APIs and tools from the agent
+- `track_bot_sentiment` - Analyze sentiment of bot responses during conversation
+- `end_conversation_on_goodbye` - End conversation if the bot says goodbye
+
+See the documentation for each agent's config object for all available options.
+
+
+To create your own agent, check out [Create your own AI Agent](open-source/create-your-own-agent)
+
+## API Schema
+
+# `AgentConfig`
+
+<ParamField body="type" type="AgentType">
+  The type of agent. Used to deserialize the correct subclass.
+</ParamField>
+
+<ParamField body="initial_message" type="Optional[BaseMessage]">
+  Optional initial message for the agent to say.
+</ParamField>
+
+<ParamField body="generate_responses" type="bool">
+  Whether to generate responses streamingly or synchronously. Streaming allows the agent to be interrupted.
+</ParamField>
+
+<ParamField body="allowed_idle_time_seconds" type="Optional[float]">
+  Allowed idle time before automatically ending the conversation, in seconds.
+</ParamField>
+
+<ParamField body="allow_agent_to_be_cut_off" type="bool">
+  Whether agent responses can be cut off by the human speaking.
+</ParamField>
+
+<ParamField body="end_conversation_on_goodbye" type="bool">
+  Automatically end the conversation when the agent detects the human said goodbye.
+</ParamField>
+
+<ParamField body="send_filler_audio" type="Union[bool, FillerAudioConfig]">
+  Configuration for sending filler audio when the agent is thinking.
+</ParamField>
+
+<ParamField body="webhook_config" type="Optional[WebhookConfig]">
+  Webhook called at certain events.
+</ParamField>
+
+<ParamField body="track_bot_sentiment" type="bool">
+  Continuously analyze bot sentiment based on the conversation transcript.
+</ParamField>
+
+<ParamField body="actions" type="Optional[List[ActionConfig]]">
+  List of actions the agent can invoke.
+</ParamField>
+
+# `LLMAgentConfig`
+
+<ParamField body="prompt_preamble" type="str">
+  Instructions provided to the LLM.
+</ParamField>
+
+<ParamField body="expected_first_prompt" type="Optional[str]">
+  Optional first prompt to seed the conversation.
+</ParamField>
+
+<ParamField body="model_name" type="str">
+  Name of model to use, like `text-davinci-003`.
+</ParamField>
+
+<ParamField body="temperature" type="float">
+  Sampling temperature for the LLM.
+</ParamField>
+
+<ParamField body="max_tokens" type="int">
+  Maximum number of tokens to generate per response.
+</ParamField>
+
+<ParamField body="cut_off_response" type="Optional[CutOffResponse]">
+  Message(s) to say when the agent is cut off.
+</ParamField>
+
+# `ChatGPTAgentConfig`
+
+<ParamField body="prompt_preamble" type="str">
+  Instructions provided to the LLM.
+</ParamField>
+
+<ParamField body="expected_first_prompt" type="Optional[str]">
+  Optional first prompt to seed the conversation.
+</ParamField>
+
+<ParamField body="model_name" type="str">
+  Name of model to use, like `gpt-3.5-turbo`.
+</ParamField>
+
+<ParamField body="temperature" type="float">
+  Sampling temperature.
+</ParamField>
+
+<ParamField body="max_tokens" type="int">
+  Maximum number of tokens to generate per response.
+</ParamField>
+
+<ParamField body="cut_off_response" type="Optional[CutOffResponse]">
+  Message(s) to say when the agent is cut off.
+</ParamField>
+
+<ParamField body="azure_params" type="Optional[AzureOpenAIConfig]">
+  Configuration when using Azure OpenAI.
+</ParamField>
+
+<ParamField body="vector_db_config" type="Optional[VectorDBConfig]">
+  Configuration for hitting a vector database.
+</ParamField>
+
+# `InformationRetrievalAgentConfig`
+
+<ParamField body="recipient_descriptor" type="str">
+  Description of who the call is for.
+</ParamField>
+
+<ParamField body="caller_descriptor" type="str">
+  Description of who the call is from.
+</ParamField>
+
+<ParamField body="goal_description" type="str">
+  Goal of the call.
+</ParamField>
+
+<ParamField body="fields" type="List[str]">
+  Information fields to collect.
+</ParamField>

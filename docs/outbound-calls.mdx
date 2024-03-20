@@ -1,4 +1,62 @@
 ---
 title: "Outbound Calls"
-description: "🚧 Under construction"
+description: "This section describes the vocode `OutboundCall` object"
 ---
+
+# `OutboundCall`
+
+<ParamField body="base_url" type="str">
+  The base URL of your telephony server. See [this link](/open-source/telephony) for how to set one up. 
+</ParamField>
+
+<ParamField body="to_phone" type="str">
+  The phone number to call.
+</ParamField>
+
+<ParamField body="from_phone" type="str">
+  The phone number placing the call. This must be a Twilio or Vonage number associated with your account.
+</ParamField>
+
+<ParamField body="config_manager" type="BaseConfigManager">
+  The configuration manager instance for storing call metadata.
+</ParamField>
+
+<ParamField body="agent_config" type="AgentConfig">
+  The agent configuration for handling the conversation.
+</ParamField>
+
+<ParamField body="twilio_config" type="Optional[TwilioConfig]">
+  Optional Twilio configuration if using Twilio for the call.
+</ParamField>
+
+<ParamField body="vonage_config" type="Optional[VonageConfig]">
+  Optional Vonage configuration if using Vonage for the call.
+</ParamField>
+
+<ParamField body="transcriber_config" type="Optional[TranscriberConfig]">
+  Optional custom transcriber configuration. If not provided, default config will be used based on the telephony provider.
+</ParamField>
+
+<ParamField body="synthesizer_config" type="Optional[SynthesizerConfig]">
+  Optional custom synthesizer configuration. If not provided, default config will be used based on the telephony provider. 
+</ParamField>
+
+<ParamField body="conversation_id" type="Optional[str]">
+  Optional conversation ID to use for the call. If not provided, one will be generated.
+</ParamField>
+
+<ParamField body="logger" type="Optional[logging.Logger]">
+  Optional logger instance.
+</ParamField>
+
+<ParamField body="mobile_only" type="bool">
+  If True, restrict outbound calls to mobile numbers only. Default is True.
+</ParamField>
+
+<ParamField body="digits" type="Optional[str]">
+  Digits to send on call connect, e.g. for entering a conference ID. See [Twilio sendDigits](https://www.twilio.com/docs/voice/api/call-resource#create-a-call-resource).
+</ParamField>
+
+<ParamField body="output_to_speaker" type="bool">
+  If True, output inbound audio to speaker. Only supported for Vonage calls. Default is False.
+</ParamField>

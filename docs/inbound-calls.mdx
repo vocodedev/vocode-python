@@ -1,8 +1,104 @@
 ---
 title: "Inbound Calls"
-description: "🚧 Under construction"
+description: "Vocode makes it easy to handle inbound calls and have natural conversations with callers."
 ---
 
-# Buying a number
+## Overview
 
-# Configuring a number
+To handle inbound calls, you have to set up an inbound number and then configure vocode to handle the call.
+
+## Setting up inbound number
+1. Create a [Twilio](https://www.twilio.com/) account
+2. Once inside your dashboard, go to Phone Numbers -> Manage -> Buy a number to get a phone number.
+3. Then, go to Phone Numbers -> Manage -> Active Numbers and select the number you want to set up.
+4. Update the config to point the Webhook URL to `https://<YOUR BASE URL>/inbound_call` - if you're using `ngrok`, it looks like `https://asdf1234.ngrok.app/inbound_call`
+
+![Setup](/images/twilio_number_config.png)
+
+5. Hit **Save**
+
+## Configure vocode
+Then, you configure a `TelephonyServer` with one or more `InboundCallConfig` objects.
+
+These objects specify:
+
+- The URL endpoint for the inbound call
+- The agent configuration - this controls the conversational agent that will handle the call
+- Optional transcriber and synthesizer configurations
+- Provider specific configuration - e.g. Twilio or Vonage credentials
+
+When an inbound call comes in, vocode will:
+
+- Answer the call
+- Create a conversation ID to track the call session
+- Spin up a conversational agent based on the `InboundCallConfig`
+- Connect the call to the agent via a WebSocket
+- Handle transcribing audio from the caller and synthesizing responses back
+- Persist transcripts and other metadata
+
+After the call ends, vocode tears down all resources for that conversation.
+
+## Configuring Twilio
+
+To handle inbound calls from Twilio, use the `TwilioInboundCallConfig`.
+
+This requires passing in your Twilio credentials and configuring the URL endpoint Twilio should send calls to.
+
+For example:
+
+```python
+from vocode.models.telephony import TwilioInboundCallConfig
+
+inbound_config = TwilioInboundCallConfig(
+  url="/inbound_calls",
+  twilio_config=TwilioConfig(
+     account_sid="ACxxx",
+     auth_token="abc123"
+  ),
+  agent_config=MyAgentConfig()
+)
+```
+
+## Configuring Vonage
+
+For Vonage, use the `VonageInboundCallConfig` and provide your Vonage API credentials:
+
+```python
+from vocode.models.telephony import VonageInboundCallConfig
+
+inbound_config = VonageInboundCallConfig(
+  url="/inbound_calls",
+  vonage_config=VonageConfig(
+     api_key="xxx",
+     api_secret="yyy",
+     application_id="zzz".
+     private_key="www"
+  ),
+  agent_config=MyAgentConfig()
+)
+```
+
+## Customizing Agents
+
+The `agent_config` parameter on the inbound call configs controls the conversational agent.
+
+You can customize this to:
+
+- Change the base prompt the agent receives 
+- Configure different agent backends like ChatGPT
+- Set up advanced dialog managers
+
+See the [Agents documentation](/open-source/agent) for more details.
+
+## Accessing Transcripts
+
+vocode persists transcripts for each call session.
+
+You can access these programmatically by listening for `RecordingEvent` events on the `EventsManager`.
+
+The event payload contains the transcript URL to fetch.
+
+## Next Steps
+
+- Check out [Outbound Calls](/outbound-calls) for making calls from vocode
+- Learn how to [customize Agents](/open-source/agent)
