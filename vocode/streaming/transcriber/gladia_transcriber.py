@@ -14,11 +14,30 @@ from vocode.streaming.models.websocket import AudioMessage
 from vocode.streaming.transcriber.base_transcriber import (
     BaseAsyncTranscriber,
     Transcription,
+    meter,
 )
 from vocode.streaming.models.audio_encoding import AudioEncoding
 
 
 GLADIA_URL = "wss://api.gladia.io/audio/text/audio-transcription"
+
+
+avg_latency_hist = meter.create_histogram(
+    name="transcriber.gladia.avg_latency",
+    unit="seconds",
+)
+max_latency_hist = meter.create_histogram(
+    name="transcriber.gladia.max_latency",
+    unit="seconds",
+)
+min_latency_hist = meter.create_histogram(
+    name="transcriber.gladia.min_latency",
+    unit="seconds",
+)
+duration_hist = meter.create_histogram(
+    name="transcriber.gladia.duration",
+    unit="seconds",
+)
 
 
 class GladiaTranscriber(BaseAsyncTranscriber[GladiaTranscriberConfig]):
@@ -40,6 +59,7 @@ class GladiaTranscriber(BaseAsyncTranscriber[GladiaTranscriberConfig]):
             raise Exception("Gladia endpointing config not supported yet")
 
         self.buffer = bytearray()
+        self.audio_cursor = 0.0
 
     async def ready(self):
         return True
@@ -68,6 +88,7 @@ class GladiaTranscriber(BaseAsyncTranscriber[GladiaTranscriberConfig]):
         super().terminate()
 
     async def process(self):
+        self.audio_cursor = 0.0
         async with websockets.connect(GLADIA_URL) as ws:
             await ws.send(
                 json.dumps(
@@ -86,6 +107,15 @@ class GladiaTranscriber(BaseAsyncTranscriber[GladiaTranscriberConfig]):
                     except asyncio.exceptions.TimeoutError:
                         break
 
+                    # TODO: Move this and similar code into a tracing utils file / the superclass.
+                    num_channels = 1
+                    sample_width = 2
+                    self.audio_cursor += len(data) / (
+                        self.transcriber_config.sampling_rate
+                        * num_channels
+                        * sample_width
+                    )
+
                     await ws.send(
                         json.dumps(
                             {
@@ -97,6 +127,7 @@ class GladiaTranscriber(BaseAsyncTranscriber[GladiaTranscriberConfig]):
                 self.logger.debug("Terminating Gladia transcriber sender")
 
             async def receiver(ws):
+                transcript_cursor = 0.0
                 while not self._ended:
                     try:
                         result_str = await ws.recv()
@@ -110,7 +141,24 @@ class GladiaTranscriber(BaseAsyncTranscriber[GladiaTranscriberConfig]):
                     if data:
                         is_final = data["type"] == "final"
 
+                        # TODO: Move this and similar code into a tracing
+                        # utils file / the superclass.
                         if "transcription" in data and data["transcription"]:
+                            cur_max_latency = self.audio_cursor - transcript_cursor
+                            transcript_cursor = data["time_end"] / 1000
+                            cur_min_latency = self.audio_cursor - transcript_cursor
+                            duration = (
+                                data["time_end"] / 1000 - data["time_begin"] / 1000
+                            )
+
+                            avg_latency_hist.record(
+                                (cur_min_latency + cur_max_latency) / 2 * duration
+                            )
+                            duration_hist.record(duration)
+
+                            # Log max and min latencies
+                            max_latency_hist.record(cur_max_latency)
+                            min_latency_hist.record(max(cur_min_latency, 0))
                             self.output_queue.put_nowait(
                                 Transcription(
                                     message=data["transcription"],

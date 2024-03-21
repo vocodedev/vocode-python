@@ -1,3 +1,15 @@
+"""Basic benchmarking script.
+
+Example usage:
+DEEPGRAM_API_KEY=[KEY] ASSEMBLY_AI_KEY=[KEY] poetry run python playground/streaming/benchmark.py --transcribers all
+
+Powershell:
+ $env:DEEPGRAM_API_KEY = 'KEY';
+ $env:ASSEMBLY_AI_API_KEY = 'KEY';
+ poetry run python .\playground\streaming\benchmark.py --transcribers all;
+ Remove-Item Env:\DEEPGRAM_API_KEY; Remove-Item Env:\ASSEMBLY_AI_API_KEY
+"""
+
 from collections import defaultdict
 import os
 import re
@@ -43,6 +55,7 @@ from vocode.streaming.models.synthesizer import (
 from vocode.streaming.models.transcriber import (
     DeepgramTranscriberConfig,
     AssemblyAITranscriberConfig,
+    GladiaTranscriberConfig,
     PunctuationEndpointingConfig,
 )
 from vocode.streaming.models.transcript import Transcript
@@ -59,7 +72,11 @@ from vocode.streaming.synthesizer import (
     RimeSynthesizer,
     StreamElementsSynthesizer,
 )
-from vocode.streaming.transcriber import DeepgramTranscriber, AssemblyAITranscriber
+from vocode.streaming.transcriber import (
+    DeepgramTranscriber,
+    AssemblyAITranscriber,
+    GladiaTranscriber,
+)
 from vocode.streaming.transcriber.base_transcriber import Transcription
 from vocode.streaming.utils import get_chunk_size_per_second, remove_non_letters_digits
 from vocode.streaming.utils.worker import InterruptibleEvent
@@ -97,7 +114,7 @@ synthesizer_classes = {
 STREAMING_SYNTHESIZERS = ["azure", "elevenlabs"]
 
 
-TRANSCRIBER_CHOICES = ["deepgram", "assemblyai"]
+TRANSCRIBER_CHOICES = ["deepgram", "assemblyai", "gladia"]
 AGENT_CHOICES = [
     "gpt_gpt-3.5-turbo",
     "gpt_gpt-4",
@@ -270,6 +287,12 @@ def get_transcriber(transcriber_name, file_input):
     elif transcriber_name == "assemblyai":
         transcriber = AssemblyAITranscriber(
             AssemblyAITranscriberConfig.from_input_device(
+                file_input,
+            )
+        )
+    elif transcriber_name == "gladia":
+        transcriber = GladiaTranscriber(
+            GladiaTranscriberConfig.from_input_device(
                 file_input,
             )
         )
