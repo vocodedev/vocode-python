@@ -128,7 +128,7 @@ class ElevenLabsSynthesizerConfig(
     @validator("optimize_streaming_latency")
     def optimize_streaming_latency_check(cls, optimize_streaming_latency):
         if optimize_streaming_latency is not None and not (
-            0 <= optimize_streaming_latency <= 4
+                0 <= optimize_streaming_latency <= 4
         ):
             raise ValueError("optimize_streaming_latency must be between 0 and 4.")
         return optimize_streaming_latency
@@ -162,7 +162,8 @@ class CoquiSynthesizerConfig(SynthesizerConfig, type=SynthesizerType.COQUI.value
         return voice_id or COQUI_DEFAULT_SPEAKER_ID
 
 
-PLAYHT_DEFAULT_VOICE_ID = "larry"
+PLAYHT_DEFAULT_VOICE = "s3://peregrine-voices/mel28/manifest.json"
+PLAYHT_DEFAULT_VOICE_ENGINE = "PlayHT2.0-turbo"
 
 
 class PlayHtSynthesizerConfig(SynthesizerConfig, type=SynthesizerType.PLAY_HT.value):
@@ -171,7 +172,8 @@ class PlayHtSynthesizerConfig(SynthesizerConfig, type=SynthesizerType.PLAY_HT.va
     speed: Optional[int] = None
     seed: Optional[int] = None
     temperature: Optional[int] = None
-    voice_id: str = PLAYHT_DEFAULT_VOICE_ID
+    voice: str = PLAYHT_DEFAULT_VOICE
+    voice_engine: str = PLAYHT_DEFAULT_VOICE_ENGINE
     experimental_streaming: bool = False
 
 

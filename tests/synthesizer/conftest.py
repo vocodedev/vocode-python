@@ -77,7 +77,7 @@ async def fixture_eleven_labs_synthesizer_env_api_key():
 
 def create_play_ht_request_handler():
     def request_handler(url, headers, **kwargs):
-        if headers["AUTHORIZATION"] != f"Bearer {MOCK_API_KEY}":
+        if headers["AUTHORIZATION"] != MOCK_API_KEY:
             return CallbackResult(status=401)
         if headers["X-USER-ID"] != MOCK_USER_ID:
             return CallbackResult(status=401)

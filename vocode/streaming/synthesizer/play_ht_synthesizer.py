@@ -14,7 +14,7 @@ from vocode.streaming.synthesizer.base_synthesizer import (
 )
 from vocode.streaming.utils.mp3_helper import decode_mp3
 
-TTS_ENDPOINT = "https://play.ht/api/v2/tts/stream"
+TTS_ENDPOINT = "https://api.play.ht/api/v2/tts/stream"
 
 
 class PlayHtSynthesizer(BaseSynthesizer[PlayHtSynthesizerConfig]):
@@ -46,16 +46,17 @@ class PlayHtSynthesizer(BaseSynthesizer[PlayHtSynthesizerConfig]):
         bot_sentiment: Optional[BotSentiment] = None,
     ) -> SynthesisResult:
         headers = {
-            "AUTHORIZATION": f"Bearer {self.api_key}",
+            "AUTHORIZATION": self.api_key,
             "X-USER-ID": self.user_id,
             "Accept": "audio/mpeg",
             "Content-Type": "application/json",
         }
         body = {
             "quality": "draft",
-            "voice": self.synthesizer_config.voice_id,
+            "voice": self.synthesizer_config.voice,
             "text": message.text,
             "sample_rate": self.synthesizer_config.sampling_rate,
+            "voice_engine": self.synthesizer_config.voice_engine,
         }
         if self.synthesizer_config.speed:
             body["speed"] = self.synthesizer_config.speed
