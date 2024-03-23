@@ -15,11 +15,11 @@ from vocode.streaming.models.actions import (
 
 
 class TransferCallActionConfig(ActionConfig, type=ActionType.TRANSFER_CALL):
-    to_phone: str
+    pass
 
 
 class TransferCallParameters(BaseModel):
-    pass
+    to_phone: str = Field(..., description="Phone number to transfer the call to")
 
 
 class TransferCallResponse(BaseModel):
@@ -63,8 +63,8 @@ class TransferCall(
         self, action_input: ActionInput[TransferCallParameters]
     ) -> ActionOutput[TransferCallResponse]:
         twilio_call_sid = self.get_twilio_sid(action_input)
-
-        await self.transfer_call(twilio_call_sid, self.action_config.to_phone)
+    
+        await self.transfer_call(twilio_call_sid, action_input.params.to_phone)
 
         return ActionOutput(
             action_type=action_input.action_config.type,
