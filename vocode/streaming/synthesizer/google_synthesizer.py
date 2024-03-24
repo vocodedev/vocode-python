@@ -33,7 +33,7 @@ class GoogleSynthesizer(BaseSynthesizer[GoogleSynthesizerConfig]):
     ):
         super().__init__(synthesizer_config, aiohttp_session)
 
-        from google.cloud import texttospeech as tts
+        from google.cloud import texttospeech_v1beta1 as tts
         import google.auth
 
         google.auth.default()
