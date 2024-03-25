@@ -1,0 +1,34 @@
+{
+    "agent": {
+      "type": "SalesGPT",
+      "llm": {
+        "type": "ChatLiteLLM",
+        "params": {
+          "temperature": 0.2,
+          "model_name": "gpt-3.5-turbo"
+        }
+      },
+      "verbose": true,
+      "use_tools": true,
+      "tools": [
+        {
+          "name": "get_all_contacts",
+          "type": "GetAllContactsTool"
+        },
+        {
+          "name": "call_phone_number",
+          "type": "CallPhoneNumberTool"
+        },
+        {
+          "name": "word_of_the_day",
+          "type": "WordOfTheDayTool"
+        }
+      ],
+      "sales_agent_config": {
+        "product_catalog": "examples/sample_product_catalog.txt",
+        "salesperson_name": "Ted Lasso"
+      },
+      "objective": "Initiate a sales call to a random contact from the phone book and engage in a sales conversation."
+    }
+  }
+  

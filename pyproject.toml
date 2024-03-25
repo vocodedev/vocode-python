@@ -8,7 +8,7 @@ readme = "README.md"
 homepage = "https://github.com/vocodedev/vocode-python"
 
 [tool.poetry.dependencies]
-python = ">=3.8.1,<3.12"
+python = "3.11.8"
 pydub = "^0.25.1"
 nltk = "^3.8.1"
 openai = "^0.27.8"
