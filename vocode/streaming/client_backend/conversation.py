@@ -47,7 +47,7 @@ class ConversationRouter(BaseRouter):
             )
         ),
         synthesizer_thunk: Callable[
-            [OutputAudioConfig], BaseSynthesizer
+            [OutputAudioConfig, Optional[str]], BaseSynthesizer
         ] = lambda output_audio_config: AzureSynthesizer(
             AzureSynthesizerConfig.from_output_audio_config(
                 output_audio_config=output_audio_config
@@ -70,7 +70,7 @@ class ConversationRouter(BaseRouter):
         start_message: AudioConfigStartMessage,
     ) -> StreamingConversation:
         transcriber = self.transcriber_thunk(start_message.input_audio_config)
-        synthesizer = self.synthesizer_thunk(start_message.output_audio_config)
+        synthesizer = self.synthesizer_thunk(start_message.output_audio_config, start_message.conversation_id)
         synthesizer.synthesizer_config.should_encode_as_wav = True
         return StreamingConversation(
             output_device=output_device,
