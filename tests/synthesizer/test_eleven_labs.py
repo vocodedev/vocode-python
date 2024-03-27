@@ -29,7 +29,9 @@ async def test_with_api_key(
     fixture_eleven_labs_synthesizer_with_api_key: ElevenLabsSynthesizer,
     mock_eleven_labs_api: aioresponses,
 ):
-    await assert_synthesis_result_valid(await fixture_eleven_labs_synthesizer_with_api_key)
+    await assert_synthesis_result_valid(
+        await fixture_eleven_labs_synthesizer_with_api_key
+    )
 
 
 @pytest.mark.asyncio
@@ -48,4 +50,6 @@ async def test_with_env_api_key(
     fixture_eleven_labs_synthesizer_env_api_key: ElevenLabsSynthesizer,
     mock_eleven_labs_api: aioresponses,
 ):
-    await assert_synthesis_result_valid(await fixture_eleven_labs_synthesizer_env_api_key)
+    await assert_synthesis_result_valid(
+        await fixture_eleven_labs_synthesizer_env_api_key
+    )

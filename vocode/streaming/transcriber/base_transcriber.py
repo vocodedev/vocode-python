@@ -14,6 +14,7 @@ from vocode.streaming.utils.worker import AsyncWorker, ThreadAsyncWorker
 tracer = trace.get_tracer(__name__)
 meter = metrics.get_meter(__name__)
 
+
 class Transcription(BaseModel):
     message: str
     confidence: float
