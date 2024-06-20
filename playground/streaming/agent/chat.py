@@ -158,6 +158,13 @@ async def run_agent(
                 break
 
     async def sender():
+        if agent.agent_config.initial_message is not None:
+            agent.agent_responses_consumer.consume_nonblocking(
+                InterruptibleAgentResponseEvent(
+                    payload=AgentResponseMessage(message=agent.agent_config.initial_message),
+                    agent_response_tracker=asyncio.Event(),
+                )
+            )
         while not ended:
             try:
                 message = await asyncio.get_event_loop().run_in_executor(
@@ -221,13 +228,6 @@ async def agent_main():
     )
     agent.attach_conversation_state_manager(DummyConversationManager())
     agent.attach_transcript(transcript)
-    if agent.agent_config.initial_message is not None:
-        agent.output_queue.put_nowait(
-            InterruptibleAgentResponseEvent(
-                payload=AgentResponseMessage(message=agent.agent_config.initial_message),
-                agent_response_tracker=asyncio.Event(),
-            )
-        )
     agent.start()
 
     try:
