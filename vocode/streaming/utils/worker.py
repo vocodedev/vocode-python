@@ -29,7 +29,7 @@ class AbstractWorker(Generic[WorkerInputType], ABC):
 class QueueConsumer(AbstractWorker[WorkerInputType]):
     def __init__(
         self,
-        input_queue: asyncio.Queue[WorkerInputType] = None,
+        input_queue: Optional[asyncio.Queue[WorkerInputType]] = None,
     ) -> None:
         self.input_queue: asyncio.Queue[WorkerInputType] = input_queue or asyncio.Queue()
 
