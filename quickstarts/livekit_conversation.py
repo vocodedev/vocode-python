@@ -1,12 +1,15 @@
 import asyncio
+from functools import partial
 import signal
 import os
 from dotenv import load_dotenv
 from livekit import api, rtc
+from loguru import logger
 from numpy import source
 
 
 from vocode.streaming import synthesizer
+from vocode.logging import configure_pretty_logging
 from vocode.streaming.agent.chat_gpt_agent import ChatGPTAgent
 from vocode.streaming.livekit.livekit_conversation import LiveKitConversation
 from vocode.streaming.models.agent import ChatGPTAgentConfig
@@ -36,7 +39,37 @@ async def create_audio_source(
     return source
 
 
+configure_pretty_logging()
+
+
+def on_track_subscribed(
+    audio_queue: asyncio.Queue,
+    conversation_ready: asyncio.Event,
+    track: rtc.Track,
+    publication: rtc.RemoteTrackPublication,
+    participant: rtc.RemoteParticipant,
+):
+    logger.info("track subscribed: %s", publication.sid)
+    if track.kind == rtc.TrackKind.KIND_AUDIO:
+        audio_stream = rtc.AudioStream(track)
+        asyncio.ensure_future(receive_frames(audio_queue, conversation_ready, audio_stream))
+
+
+async def receive_frames(
+    audio_queue: asyncio.Queue,
+    conversation_ready: asyncio.Event,
+    audio_stream: rtc.AudioStream,
+):
+    # this is where we will send the frames to transcription
+    async for event in audio_stream:
+        if conversation_ready.is_set():
+            frame = event.frame
+            audio_queue.put_nowait(bytes(frame.data))
+
+
 async def main(room: rtc.Room):
+    conversation_ready = asyncio.Event()
+    audio_queue = asyncio.Queue()
 
     # Join the livekit room
     token = (
@@ -51,13 +84,18 @@ async def main(room: rtc.Room):
         )
         .to_jwt()
     )
+
+    room.on("track_subscribed", partial(on_track_subscribed, audio_queue, conversation_ready))
     await room.connect(os.getenv("LIVEKIT_URL"), token)
 
-    # Create an audio source for the agent
     source = await create_audio_source(room)
 
     # Set up output device
-    output_device = LiveKitOutputDevice(source=source)
+    output_device = LiveKitOutputDevice(
+        sampling_rate=48000,
+        audio_encoding=AudioEncoding.LINEAR16,
+        source=source,
+    )
 
     conversation = LiveKitConversation(
         room=room,
@@ -66,6 +104,7 @@ async def main(room: rtc.Room):
             DeepgramTranscriberConfig(
                 audio_encoding=AudioEncoding.LINEAR16,
                 sampling_rate=48000,
+                chunk_size=480,
                 endpointing_config=PunctuationEndpointingConfig(),
                 api_key=os.getenv("DEEPGRAM_API_KEY"),
             ),
@@ -88,11 +127,13 @@ async def main(room: rtc.Room):
     )
 
     await conversation.start()
+    conversation_ready.set()
     print("Conversation started")
 
     signal.signal(signal.SIGINT, lambda _0, _1: asyncio.create_task(conversation.terminate()))
     while conversation.is_active():
-        await asyncio.sleep(1)
+        chunk = await audio_queue.get()
+        conversation.receive_audio(chunk)
 
 
 if __name__ == "__main__":
@@ -104,8 +145,8 @@ if __name__ == "__main__":
         loop.stop()
 
     asyncio.ensure_future(main(room))
-    for signal in [signal.SIGINT, signal.SIGTERM]:
-        loop.add_signal_handler(signal, lambda: asyncio.ensure_future(cleanup()))
+    for sig in [signal.SIGINT, signal.SIGTERM]:
+        loop.add_signal_handler(sig, lambda: asyncio.ensure_future(cleanup()))
 
     try:
         loop.run_forever()

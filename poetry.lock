@@ -2028,7 +2028,7 @@ requests = ">=2,<3"
 name = "livekit"
 version = "0.11.1"
 description = "Python Real-time SDK for LiveKit"
-optional = true
+optional = false
 python-versions = ">=3.9.0"
 files = [
     {file = "livekit-0.11.1-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:262ec6aa47a3bcd43cfebc6a288be476ce05a68a40bb034db70be40c084e07a6"},
@@ -2042,6 +2042,39 @@ files = [
 [package.dependencies]
 protobuf = ">=3"
 types-protobuf = ">=3"
+
+[[package]]
+name = "livekit-api"
+version = "0.5.1"
+description = "Python Server API for LiveKit"
+optional = false
+python-versions = ">=3.9.0"
+files = [
+    {file = "livekit_api-0.5.1-py3-none-any.whl", hash = "sha256:46f50c45e5ef57dca9e071a205d9fe82929c6196a6318b98f6f62bbacc84c76a"},
+    {file = "livekit_api-0.5.1.tar.gz", hash = "sha256:7c5a8c0131b2880a091c19345a0e549be8a1448b63ba34611ff8bf63077ab0dd"},
+]
+
+[package.dependencies]
+aiohttp = ">=3.9.0"
+livekit-protocol = ">=0.5.1,<2"
+protobuf = ">=3"
+pyjwt = ">=2.0.0"
+types-protobuf = ">=4,<5"
+
+[[package]]
+name = "livekit-protocol"
+version = "0.5.1"
+description = "Python protocol stubs for LiveKit"
+optional = false
+python-versions = ">=3.7.0"
+files = [
+    {file = "livekit_protocol-0.5.1-py3-none-any.whl", hash = "sha256:91655cbceffc514ddd0d01cfa1c12acbce2e59020208ce6847d8804003ba98fd"},
+    {file = "livekit_protocol-0.5.1.tar.gz", hash = "sha256:37e6cc798ed4e3746cd94ac42ce034c88cc99ab309f3c40a8bf1fc403a111598"},
+]
+
+[package.dependencies]
+protobuf = ">=3"
+types-protobuf = ">=4,<5"
 
 [[package]]
 name = "loguru"
@@ -2935,7 +2968,7 @@ requests = ">=2.31.0,<3.0.0"
 name = "pyjwt"
 version = "2.8.0"
 description = "JSON Web Token implementation in Python"
-optional = true
+optional = false
 python-versions = ">=3.7"
 files = [
     {file = "PyJWT-2.8.0-py3-none-any.whl", hash = "sha256:59127c392cc44c2da5bb3192169a91f429924e17aff6534d70fdc02ab3e04320"},
@@ -3998,13 +4031,13 @@ types-setuptools = "*"
 
 [[package]]
 name = "types-protobuf"
-version = "5.27.0.20240626"
+version = "4.25.0.20240417"
 description = "Typing stubs for protobuf"
-optional = true
+optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "types-protobuf-5.27.0.20240626.tar.gz", hash = "sha256:683ba14043bade6785e3f937a7498f243b37881a91ac8d81b9202ecf8b191e9c"},
-    {file = "types_protobuf-5.27.0.20240626-py3-none-any.whl", hash = "sha256:688e8f7e8d9295db26bc560df01fb731b27a25b77cbe4c1ce945647f7024f5c1"},
+    {file = "types-protobuf-4.25.0.20240417.tar.gz", hash = "sha256:c34eff17b9b3a0adb6830622f0f302484e4c089f533a46e3f147568313544352"},
+    {file = "types_protobuf-4.25.0.20240417-py3-none-any.whl", hash = "sha256:e9b613227c2127e3d4881d75d93c93b4d6fd97b5f6a099a0b654a05351c8685d"},
 ]
 
 [[package]]
@@ -4711,4 +4744,4 @@ transcribers = ["google-cloud-speech"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<4.0"
-content-hash = "6db0fe735d65f6e7ef508241d63a4b069d7b01d67b2d4bca5571aae70641d4c3"
+content-hash = "ef3b3a0b555d1f0a8e1eb10d9fe7078c9c558c6f634092f0359d2b95c3b507ae"

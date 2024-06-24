@@ -1,3 +1,4 @@
+import asyncio
 from openai import audio
 from vocode.streaming.models.audio import AudioEncoding
 from vocode.streaming.output_device.base_output_device import BaseOutputDevice
@@ -5,9 +6,10 @@ from vocode.streaming.utils.worker import AsyncQueueWorker
 from livekit import rtc
 
 
-class LiveKitOutputDevice(BaseOutputDevice, AsyncQueueWorker):
+class LiveKitOutputDevice(AsyncQueueWorker, BaseOutputDevice):
     def __init__(self, sampling_rate: int, audio_encoding: AudioEncoding, source: rtc.AudioSource):
-        super().__init__(sampling_rate, audio_encoding)
+        BaseOutputDevice.__init__(self, sampling_rate, audio_encoding)
+        AsyncQueueWorker.__init__(self, input_queue=asyncio.Queue())
         self.source = source
 
     async def process(self, item: bytes):
