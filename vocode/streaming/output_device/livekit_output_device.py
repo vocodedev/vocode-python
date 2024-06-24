@@ -1,5 +1,4 @@
 import asyncio
-from openai import audio
 from vocode.streaming.models.audio import AudioEncoding
 from vocode.streaming.output_device.base_output_device import BaseOutputDevice
 from vocode.streaming.utils.worker import AsyncQueueWorker
