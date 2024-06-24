@@ -1,17 +1,14 @@
 import asyncio
 from functools import partial
-import signal
 import os
-from dotenv import load_dotenv
-from livekit import api, rtc
+from livekit.agents import JobContext, JobRequest, WorkerOptions, cli
 from loguru import logger
-from numpy import source
+from livekit import rtc
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
-from vocode.streaming import synthesizer
+from quickstarts.livekit_conversation import on_track_subscribed
 from vocode.logging import configure_pretty_logging
 from vocode.streaming.agent.chat_gpt_agent import ChatGPTAgent
-from vocode.streaming.livekit.livekit_conversation import LiveKitConversation
 from vocode.streaming.models.agent import ChatGPTAgentConfig
 from vocode.streaming.models.audio import AudioEncoding
 from vocode.streaming.models.message import BaseMessage
@@ -21,10 +18,24 @@ from vocode.streaming.models.transcriber import (
     PunctuationEndpointingConfig,
 )
 from vocode.streaming.output_device.livekit_output_device import LiveKitOutputDevice
+from vocode.streaming.streaming_conversation import StreamingConversation
 from vocode.streaming.synthesizer.eleven_labs_synthesizer import ElevenLabsSynthesizer
 from vocode.streaming.transcriber.deepgram_transcriber import DeepgramTranscriber
 
-load_dotenv()
+
+class Settings(BaseSettings):
+
+    livekit_api_key: str = "ENTER_YOUR_LIVE_KIT_API_KEY"
+    livekit_api_secret: str = "ENTER_YOUR_LIVE_KIT_API_SECRET"
+    livekit_ws_url: str = "ENTER_YOUR_LIVE_KIT_WS_URL"
+
+    # This means a .env file can be used to overload these settings
+    # ex: "OPENAI_API_KEY=my_key" will set openai_api_key over the default above
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 async def create_audio_source(
@@ -39,7 +50,13 @@ async def create_audio_source(
     return source
 
 
-configure_pretty_logging()
+async def send_frames_to_conversation(
+    conversation: StreamingConversation,
+    audio_queue: asyncio.Queue[bytes],
+):
+    while conversation.is_active():
+        chunk = await audio_queue.get()
+        conversation.receive_audio(chunk)
 
 
 def on_track_subscribed(
@@ -67,38 +84,20 @@ async def receive_frames(
             audio_queue.put_nowait(bytes(frame.data))
 
 
-async def main(room: rtc.Room):
+async def entrypoint(ctx: JobContext):
     conversation_ready = asyncio.Event()
     audio_queue = asyncio.Queue()
 
-    # Join the livekit room
-    token = (
-        api.AccessToken()
-        .with_identity("Vocode Agent")
-        .with_name("Vocode Agent")
-        .with_grants(
-            api.VideoGrants(
-                room_join=True,
-                room="vocode-room",
-            )
-        )
-        .to_jwt()
-    )
+    ctx.room.on("track_subscribed", partial(on_track_subscribed, audio_queue, conversation_ready))
+    source = await create_audio_source(ctx.room)
 
-    room.on("track_subscribed", partial(on_track_subscribed, audio_queue, conversation_ready))
-    await room.connect(os.getenv("LIVEKIT_URL"), token)
-
-    source = await create_audio_source(room)
-
-    # Set up output device
     output_device = LiveKitOutputDevice(
         sampling_rate=48000,
         audio_encoding=AudioEncoding.LINEAR16,
         source=source,
     )
 
-    conversation = LiveKitConversation(
-        room=room,
+    conversation = StreamingConversation(
         output_device=output_device,
         transcriber=DeepgramTranscriber(
             DeepgramTranscriberConfig(
@@ -125,30 +124,25 @@ async def main(room: rtc.Room):
             )
         ),
     )
-
     await conversation.start()
     conversation_ready.set()
-    print("Conversation started")
+    asyncio.create_task(send_frames_to_conversation(conversation, audio_queue))
 
-    signal.signal(signal.SIGINT, lambda _0, _1: asyncio.create_task(conversation.terminate()))
-    while conversation.is_active():
-        chunk = await audio_queue.get()
-        conversation.receive_audio(chunk)
+
+async def request_fnc(req: JobRequest) -> None:
+    logger.info("received request %s", req)
+    await req.accept(entrypoint)
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    room = rtc.Room(loop=loop)
+    configure_pretty_logging()
 
-    async def cleanup():
-        await room.disconnect()
-        loop.stop()
-
-    asyncio.ensure_future(main(room))
-    for sig in [signal.SIGINT, signal.SIGTERM]:
-        loop.add_signal_handler(sig, lambda: asyncio.ensure_future(cleanup()))
-
-    try:
-        loop.run_forever()
-    finally:
-        loop.close()
+    settings = Settings()
+    cli.run_app(
+        WorkerOptions(
+            request_fnc,
+            api_key=settings.livekit_api_key,
+            api_secret=settings.livekit_api_secret,
+            ws_url=settings.livekit_ws_url,
+        )
+    )

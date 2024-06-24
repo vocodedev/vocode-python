@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "livekit_app"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+livekit = "^0.11.1"
+livekit-api = "^0.5.0"
+vocode = { path = "../..", develop = true }
+livekit-agents = "^0.7.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
