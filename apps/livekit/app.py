@@ -6,7 +6,6 @@ from loguru import logger
 from livekit import rtc
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from quickstarts.livekit_conversation import on_track_subscribed
 from vocode.logging import configure_pretty_logging
 from vocode.streaming.agent.chat_gpt_agent import ChatGPTAgent
 from vocode.streaming.models.agent import ChatGPTAgentConfig
