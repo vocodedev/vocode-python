@@ -37,7 +37,9 @@ if __name__ == "__main__":
         async for chunk_result in synthesis_result.chunk_generator:
             try:
                 start_time = time.time()
-                speech_length_seconds = seconds_per_chunk * (len(chunk_result.chunk) / chunk_size)
+                speech_length_seconds = seconds_per_chunk * (
+                    len(chunk_result.chunk) / chunk_size
+                )
                 output_device.consume_nonblocking(chunk_result.chunk)
                 end_time = time.time()
                 await asyncio.sleep(
@@ -46,11 +48,19 @@ if __name__ == "__main__":
                         0,
                     )
                 )
-                print("Sent chunk {} with size {}".format(chunk_idx, len(chunk_result.chunk)))
+                print(
+                    "Sent chunk {} with size {}".format(
+                        chunk_idx, len(chunk_result.chunk)
+                    )
+                )
                 chunk_idx += 1
             except asyncio.CancelledError:
                 seconds = chunk_idx * seconds_per_chunk
-                print("Interrupted, stopping text to speech after {} chunks".format(chunk_idx))
+                print(
+                    "Interrupted, stopping text to speech after {} chunks".format(
+                        chunk_idx
+                    )
+                )
                 message_sent = f"{synthesis_result.get_message_up_to(seconds)}-"
                 cut_off = True
                 break
@@ -60,7 +70,9 @@ if __name__ == "__main__":
     async def main():
         speaker_output = BlockingSpeakerOutput.from_default_device()
         speaker_output.start()
-        synthesizer = AzureSynthesizer(AzureSynthesizerConfig.from_output_device(speaker_output))
+        synthesizer = AzureSynthesizer(
+            AzureSynthesizerConfig.from_output_device(speaker_output)
+        )
         try:
             while True:
                 message_sent, _ = await speak(

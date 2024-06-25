@@ -10,6 +10,16 @@ from loguru import logger
 from pydantic.v1 import BaseModel, Field
 from websockets.client import WebSocketClientProtocol
 
+from deepgram import (
+    DeepgramClient,
+    DeepgramClientOptions,
+    LiveTranscriptionEvents,
+    LiveOptions,
+    LiveResultResponse,
+    UtteranceEndResponse,
+)
+from deepgram.clients.live.v1.response import Word
+
 from vocode import getenv
 from vocode.streaming.models.audio import AudioEncoding
 from vocode.streaming.models.transcriber import (
@@ -21,7 +31,11 @@ from vocode.streaming.models.transcriber import (
     Transcription,
 )
 from vocode.streaming.transcriber.base_transcriber import BaseAsyncTranscriber
-from vocode.utils.sentry_utils import CustomSentrySpans, sentry_configured, sentry_create_span
+from vocode.utils.sentry_utils import (
+    CustomSentrySpans,
+    sentry_configured,
+    sentry_create_span,
+)
 
 PUNCTUATION_TERMINATORS = [".", "!", "?"]
 NUM_RESTARTS = 5
@@ -51,90 +65,83 @@ class DeepgramEndpointingConfig(EndpointingConfig, type="deepgram"):  # type: ig
     use_single_utterance_endpointing_for_first_utterance: bool = False
 
 
-class DeepgramUtteranceEnd(BaseModel):
-    pass
-
-    def __str__(self):
-        return "DeepgramUtteranceEnd()"
-
-
-class DeepgramTranscriptionResult(BaseModel):
-    class TranscriptionChoice(BaseModel):
-        transcript: str
-        confidence: float
-        words: List[dict]
-
-    is_final: bool
-    speech_final: bool
-    top_choice: TranscriptionChoice
-    start: float
-    duration: float
-
-    def __str__(self):
-        return f"DeepgramTranscriptionResult(transcript={self.top_choice.transcript}, is_final={self.is_final}, speech_final={self.speech_final})"
-
-
 class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
     def __init__(
         self,
         transcriber_config: DeepgramTranscriberConfig,
+        api_key: Optional[str] = "",
     ):
         super().__init__(transcriber_config)
-        self.api_key = self.transcriber_config.api_key or getenv("DEEPGRAM_API_KEY")
-        if not self.api_key:
-            raise ValueError(
+
+        self._ended = False
+        self._deepgram_streaming_config = self.create_deepgram_streaming_config()
+
+        # set up the deepgram client and enable keepalive
+        self._client_config = DeepgramClientOptions(options={"keepalive": "true"})
+        deepgram: DeepgramClient = DeepgramClient(api_key, self._client_config)
+        if not deepgram.api_key:
+            raise Exception(
                 "Please set DEEPGRAM_API_KEY environment variable or pass it as a parameter"
             )
+        self._dgClient = deepgram.listen.asynclive.v("1")
+
+        # subscribe to the transcription event
+        self._dgClient.on(LiveTranscriptionEvents.Transcript, self._on_transcribe)
+        self._dgClient.on(LiveTranscriptionEvents.UtteranceEnd, self._on_utterance_end)
+
         self._ended = False
-        self.is_ready = False
-        self.audio_cursor = 0.0
-        self.transcript_cursor = 0.0
+        self._audio_cursor = 0.0
+        self._transcript_cursor = 0.0
 
-        self.ws_url = getattr(transcriber_config, "ws_url", DEEPGRAM_API_WS_URL)
+        self._min_latency = 0.0
+        self._max_latency = 0.0
+        self._avg_latency = 0.0
 
-        self.min_latency = 0.0
-        self.max_latency = 0.0
-        self.avg_latency = 0.0
+        self._avg_latency_numer = 0.0
+        self._avg_latency_denom = 0.0
 
-        self.avg_latency_numer = 0.0
-        self.avg_latency_denom = 0.0
-
-        self.start_ts: Optional[datetime] = None
-        self.connected_ts: Optional[datetime] = None
-        self.start_sending_ts: Optional[datetime] = None
-        self.start_receiving_ts: Optional[datetime] = None
+        self._start_ts: Optional[datetime] = None
+        self._connected_ts: Optional[datetime] = None
+        self._start_sending_ts: Optional[datetime] = None
+        self._start_receiving_ts: Optional[datetime] = None
 
         self.is_first_transcription = True
 
-    def _get_speed_coefficient(self):
-        return self.speed_manager.get_speed_coefficient() if self.speed_manager else 1.0
+        # shared between transcribe and utterance_end
+        self._buffer = ""
+        self._buffer_avg_confidence = 0.0
+        self._num_buffer_utterances = 1
+        self._time_silent = 0.0
+        self._words_buffer: List[Word] = []
+        self._is_final_ts: Optional[datetime] = None
 
-    def get_deepgram_url(self):
+    def create_deepgram_streaming_config(self):
+        config: LiveOptions = LiveOptions()
+
+        if self.transcriber_config.model:
+            config.model = self.transcriber_config.model
+        if self.transcriber_config.language:
+            config.language = self.transcriber_config.language
+        if self.transcriber_config.tier:
+            config.tier = self.transcriber_config.tier
+        if self.transcriber_config.version:
+            config.version = self.transcriber_config.version
+        if self.transcriber_config.keywords:
+            config.keywords = self.transcriber_config.keywords
+
         if self.transcriber_config.audio_encoding == AudioEncoding.LINEAR16:
-            encoding = "linear16"
+            config.encoding = "linear16"
         elif self.transcriber_config.audio_encoding == AudioEncoding.MULAW:
-            encoding = "mulaw"
+            config.encoding = "mulaw"
         else:
             raise Exception(
                 f"Audio encoding not supported {self.transcriber_config.audio_encoding}"
             )
-        url_params = {
-            "encoding": encoding,
-            "sample_rate": self.transcriber_config.sampling_rate,
-            "channels": NUM_AUDIO_CHANNELS,
-            "interim_results": "true",
-        }
-        extra_params = {}
-        if self.transcriber_config.language:
-            extra_params["language"] = self.transcriber_config.language
-        if self.transcriber_config.model:
-            extra_params["model"] = self.transcriber_config.model
-        if self.transcriber_config.tier:
-            extra_params["tier"] = self.transcriber_config.tier
-        if self.transcriber_config.version:
-            extra_params["version"] = self.transcriber_config.version
-        if self.transcriber_config.keywords:
-            extra_params["keywords"] = self.transcriber_config.keywords
+
+        config.interim_results = True
+        config.channels = NUM_AUDIO_CHANNELS
+        config.sample_rate = self.transcriber_config.sampling_rate
+
         if self.transcriber_config.endpointing_config and (
             isinstance(
                 self.transcriber_config.endpointing_config,
@@ -149,24 +156,29 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
                 DeepgramEndpointingConfig,
             )
         ):
-            extra_params["punctuate"] = "true"
+            config.punctuate = True
+            config.smart_format = True
+
         if isinstance(
             self.transcriber_config.endpointing_config,
             DeepgramEndpointingConfig,
         ):
-            extra_params["endpointing"] = int(
+            config.endpointing = int(
                 self.transcriber_config.endpointing_config.vad_threshold_ms
                 * (1 / self._get_speed_coefficient())
             )
-            extra_params["utterance_end_ms"] = max(
+            config.utterance_end_ms = max(
                 int(
                     self.transcriber_config.endpointing_config.utterance_cutoff_ms
                     * (1 / self._get_speed_coefficient())
                 ),
                 1000,
             )  # Deepgram recommends using at least 1000ms since the tick period is ~1s
-        url_params.update(extra_params)
-        return f"{self.ws_url}/v1/listen?{urlencode(url_params)}"
+
+        return config
+
+    def _get_speed_coefficient(self):
+        return self.speed_manager.get_speed_coefficient() if self.speed_manager else 1.0
 
     async def _run_loop(self):
         restarts = 0
@@ -182,17 +194,116 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
         # Put this in logs until we sentry metrics show up
         # properly on dashboard
         logger.info(
-            f"Transcription latency is {self.avg_latency:.4f}s",
+            f"Transcription latency is {self._avg_latency:.4f}s",
             extra={
-                "avg_latency": self.avg_latency,
-                "min_latency": self.min_latency,
-                "max_latency": self.max_latency,
+                "avg_latency": self._avg_latency,
+                "min_latency": self._min_latency,
+                "max_latency": self._max_latency,
             },
         )
         terminate_msg = json.dumps({"type": "CloseStream"}).encode("utf-8")
         self.input_queue.put_nowait(terminate_msg)
         self._ended = True
         super().terminate()
+
+    async def _on_transcribe(self, parent, result: LiveResultResponse, **kwargs):
+        self._track_transcription_latency(
+            start=result.start,
+            duration=result.duration,
+        )
+        self._buffer = ""
+        self._buffer_avg_confidence = 0.0
+        self._num_buffer_utterances = 1
+        self._time_silent = 0.0
+        self._words_buffer = []
+        self._is_final_ts = None
+
+        if (
+            result.channel.alternatives[0].transcript
+            and result.channel.alternatives[0].confidence > 0.0
+            and result.is_final
+        ):
+            words = result.channel.alternatives[0].words
+            if words:
+                self._words_buffer.extend(words)
+            self._buffer = f"{self._buffer} {result.channel.alternatives[0].transcript}"
+            if self._buffer_avg_confidence == 0:
+                self._buffer_avg_confidence = result.channel.alternatives[0].confidence
+            else:
+                self._buffer_avg_confidence = (
+                    self._buffer_avg_confidence
+                    + result.channel.alternatives[0].confidence / (self._num_buffer_utterances)
+                ) * (self._num_buffer_utterances / (self._num_buffer_utterances + 1))
+            self._num_buffer_utterances += 1
+
+            self._is_final_ts = now()
+
+        if self._buffer and self._is_endpoint(self._buffer, result, self._time_silent):
+            output_ts = now()
+            self._track_latency_of_conversation(
+                is_final_ts=self._is_final_ts,
+                output_ts=output_ts,
+            )
+            self.output_queue.put_nowait(
+                Transcription(
+                    message=self._buffer,
+                    confidence=self._buffer_avg_confidence,
+                    is_final=True,
+                    duration_seconds=self.calculate_duration(self._words_buffer),
+                )
+            )
+            self._buffer = ""
+            self._buffer_avg_confidence = 0.0
+            self._num_buffer_utterances = 1
+            self._time_silent = 0.0
+            self._words_buffer = []
+            self._is_final_ts = None
+
+        if (
+            result.channel.alternatives[0].transcript
+            and result.channel.alternatives[0].confidence > 0.0
+        ):
+            if not result.is_final:
+                interim_message = f"{self._buffer} {result.channel.alternatives[0].transcript}"
+            else:
+                interim_message = self._buffer
+
+            self.output_queue.put_nowait(
+                Transcription(
+                    message=interim_message,
+                    confidence=result.channel.alternatives[0].confidence,
+                    is_final=False,
+                )
+            )
+            self._time_silent = self.calculate_time_silent(result)
+        else:
+            self._time_silent += result.duration
+
+        logger.debug("Terminating Deepgram transcriber receiver")
+
+    async def _on_utterance_end(self, parent, utterance_end: UtteranceEndResponse, **kwargs):
+        if self._buffer and self._is_endpoint(self._buffer, utterance_end, self._time_silent):
+            output_ts = now()
+            self._track_latency_of_conversation(
+                is_final_ts=self._is_final_ts,
+                output_ts=output_ts,
+            )
+            self.output_queue.put_nowait(
+                Transcription(
+                    message=self._buffer,
+                    confidence=self._buffer_avg_confidence,
+                    is_final=True,
+                    duration_seconds=self.calculate_duration(self._words_buffer),
+                )
+            )
+            self._buffer = ""
+            self._buffer_avg_confidence = 0.0
+            self._num_buffer_utterances = 1
+            self._time_silent = 0.0
+            self._words_buffer = []
+            self._is_final_ts = None
+
+        logger.debug("Terminating Deepgram utterance_end receiver")
 
     def get_input_sample_width(self):
         encoding = self.transcriber_config.audio_encoding
@@ -203,15 +314,15 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
         else:
             raise Exception(f"Audio encoding not supported {encoding}")
 
-    def get_byte_rate(self):
+    def _get_byte_rate(self):
         sample_width = self.get_input_sample_width()
         sample_rate = self.transcriber_config.sampling_rate
         return sample_width * sample_rate * NUM_AUDIO_CHANNELS
 
-    def is_endpoint(
+    def _is_endpoint(
         self,
         current_buffer: str,
-        deepgram_response: Union[DeepgramUtteranceEnd, DeepgramTranscriptionResult],
+        deepgram_response: Union[UtteranceEndResponse, LiveResultResponse],
         time_silent: float,
     ):
         is_endpoint, log_params = self._compute_is_endpoint_and_log_params(
@@ -225,13 +336,13 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
     def _satisfies_time_cutoff(
         *,
         seconds: float,
-        deepgram_response: Union[DeepgramUtteranceEnd, DeepgramTranscriptionResult],
+        deepgram_response: Union[UtteranceEndResponse, LiveResultResponse],
         current_buffer: str,
         time_silent: float,
     ):
         return (
-            isinstance(deepgram_response, DeepgramTranscriptionResult)
-            and not deepgram_response.top_choice.transcript
+            isinstance(deepgram_response, LiveResultResponse)
+            and not deepgram_response.channel.alternatives[0].transcript
             and len(current_buffer) > 0
             and (time_silent + deepgram_response.duration) > seconds
         )
@@ -239,7 +350,7 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
     def _compute_is_endpoint_and_update_log_params_based_on_time_silent(
         self,
         current_buffer: str,
-        deepgram_response: DeepgramTranscriptionResult,
+        deepgram_response: LiveResultResponse,
         time_silent: float,
         time_silent_config: TimeSilentConfig,
         existing_log_params: dict,
@@ -270,7 +381,7 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
     def _compute_is_endpoint_and_log_params(
         self,
         current_buffer: str,
-        deepgram_response: Union[DeepgramUtteranceEnd, DeepgramTranscriptionResult],
+        deepgram_response: Union[UtteranceEndResponse, LiveResultResponse],
         time_silent: float,
     ) -> Tuple[bool, dict]:
         endpointing_config = self.transcriber_config.endpointing_config
@@ -299,22 +410,25 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
             DeepgramEndpointingConfig,
         ):
             if (
-                isinstance(deepgram_response, DeepgramTranscriptionResult)
+                isinstance(deepgram_response, LiveResultResponse)
                 and self.is_first_transcription
                 and endpointing_config.use_single_utterance_endpointing_for_first_utterance
             ):
                 if (
-                    deepgram_response.top_choice.transcript
-                    and deepgram_response.top_choice.transcript.strip()[-1]
+                    deepgram_response.channel.alternatives[0].transcript
+                    and deepgram_response.channel.alternatives[0].transcript.strip()[-1]
                     in PUNCTUATION_TERMINATORS
                 ):
                     log_params["source"] = "is_final"
                     return True, log_params
-            if isinstance(deepgram_response, DeepgramUtteranceEnd):
+            if isinstance(deepgram_response, UtteranceEndResponse):
                 log_params["source"] = "utterance_end"
                 return True, log_params
-            elif isinstance(deepgram_response, DeepgramTranscriptionResult):
-                if deepgram_response.top_choice.transcript and deepgram_response.speech_final:
+            elif isinstance(deepgram_response, LiveResultResponse):
+                if (
+                    deepgram_response.channel.alternatives[0].transcript
+                    and deepgram_response.speech_final
+                ):
                     log_params["source"] = "speech_final"
                     return True, log_params
                 elif (
@@ -330,15 +444,15 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
                     return True, log_params
             return False, log_params
 
-        if isinstance(deepgram_response, DeepgramTranscriptionResult):
+        if isinstance(deepgram_response, LiveResultResponse):
             if isinstance(
                 endpointing_config,
                 PunctuationEndpointingConfig,
             ):
                 if (
-                    deepgram_response.top_choice.transcript
+                    deepgram_response.channel.alternatives[0].transcript
                     and deepgram_response.speech_final
-                    and deepgram_response.top_choice.transcript.strip()[-1]
+                    and deepgram_response.channel.alternatives[0].transcript.strip()[-1]
                     in PUNCTUATION_TERMINATORS
                 ):
                     log_params["source"] = "punctuation"
@@ -360,7 +474,10 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
                     self.is_first_transcription
                     and endpointing_config.use_single_utterance_endpointing_for_first_utterance
                 ):
-                    if deepgram_response.top_choice.transcript and deepgram_response.speech_final:
+                    if (
+                        deepgram_response.channel.alternatives[0].transcript
+                        and deepgram_response.speech_final
+                    ):
                         log_params["source"] = "speech_final"
                         return True, log_params
                 if self._compute_is_endpoint_and_update_log_params_based_on_time_silent(
@@ -373,9 +490,9 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
                     return True, log_params
         return False, log_params
 
-    def calculate_time_silent(self, deepgram_transcription_result: DeepgramTranscriptionResult):
+    def calculate_time_silent(self, deepgram_transcription_result: LiveResultResponse):
         end = deepgram_transcription_result.start + deepgram_transcription_result.duration
-        words = deepgram_transcription_result.top_choice.words
+        words = deepgram_transcription_result.channel.alternatives[0].words
         if words:
             return end - words[-1]["end"]
         return deepgram_transcription_result.duration
@@ -386,147 +503,31 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
         return words[-1]["end"] - words[0]["start"]
 
     async def process(self):
-        self.audio_cursor = 0.0
-        self.start_ts = now()
+        self._audio_cursor = 0.0
+        self._start_ts = now()
+        self._connected_ts = now()
+        byte_rate = self._get_byte_rate()
 
-        extra_headers = {"Authorization": f"Token {self.api_key}"}
-        deepgram_url = self.get_deepgram_url()
-        logger.info(f"Connecting to Deepgram at {deepgram_url}")
+        # start client
+        await self._dgClient.start(self._deepgram_streaming_config)
+        logger.info(f"Connecting to Deepgram")
 
         try:
-            async with websockets.connect(deepgram_url, extra_headers=extra_headers) as ws:
-                self.connected_ts = now()
+            while not self._ended:
+                try:
+                    data = await asyncio.wait_for(self.input_queue.get(), 5)
+                except asyncio.exceptions.TimeoutError:
+                    break
 
-                async def sender(
-                    ws: WebSocketClientProtocol,
-                ):  # sends audio to websocket
-                    byte_rate = self.get_byte_rate()
+                self._audio_cursor += len(data) / byte_rate
 
-                    while not self._ended:
-                        try:
-                            data = await asyncio.wait_for(self.input_queue.get(), 5)
-                        except asyncio.exceptions.TimeoutError:
-                            break
+                if not self._start_sending_ts:
+                    self._start_sending_ts = now()
 
-                        self.audio_cursor += len(data) / byte_rate
+                await self._dgClient.send(data)
 
-                        if not self.start_sending_ts:
-                            self.start_sending_ts = now()
-
-                        await ws.send(data)
-
-                    logger.debug("Terminating Deepgram transcriber sender")
-
-                async def receiver(ws: WebSocketClientProtocol):
-                    buffer = ""
-                    buffer_avg_confidence = 0.0
-                    num_buffer_utterances = 1
-                    time_silent = 0.0
-                    words_buffer = []
-                    is_final_ts: Optional[datetime] = None
-
-                    while not self._ended:
-                        try:
-                            msg = await ws.recv()
-                            if not self.start_receiving_ts:
-                                self.start_receiving_ts = now()
-                        except Exception as e:
-                            logger.debug(f"Got error {e} in Deepgram receiver")
-                            break
-                        data = json.loads(msg)
-
-                        if "start" in data and "duration" in data:
-                            self._track_transcription_latency(
-                                start=data["start"],
-                                duration=data["duration"],
-                            )
-
-                        deepgram_response: Union[DeepgramUtteranceEnd, DeepgramTranscriptionResult]
-
-                        if data["type"] == "Results":
-                            deepgram_response = DeepgramTranscriptionResult(
-                                is_final=data["is_final"],
-                                speech_final=data["speech_final"],
-                                top_choice=data["channel"]["alternatives"][0],
-                                duration=data["duration"],
-                                start=data["start"],
-                            )
-                        elif data["type"] == "UtteranceEnd":
-                            deepgram_response = DeepgramUtteranceEnd()
-                        else:
-                            logger.info(f"Ignoring deepgram response type: {data['type']}")
-                            continue
-
-                        if (
-                            isinstance(deepgram_response, DeepgramTranscriptionResult)
-                            and deepgram_response.top_choice.transcript
-                            and deepgram_response.top_choice.confidence > 0.0
-                            and deepgram_response.is_final
-                        ):
-                            words = deepgram_response.top_choice.words
-                            if words:
-                                words_buffer.extend(words)
-                            buffer = f"{buffer} {deepgram_response.top_choice.transcript}"
-                            if buffer_avg_confidence == 0:
-                                buffer_avg_confidence = deepgram_response.top_choice.confidence
-                            else:
-                                buffer_avg_confidence = (
-                                    buffer_avg_confidence
-                                    + deepgram_response.top_choice.confidence
-                                    / (num_buffer_utterances)
-                                ) * (num_buffer_utterances / (num_buffer_utterances + 1))
-                            num_buffer_utterances += 1
-
-                            is_final_ts = now()
-
-                        if buffer and self.is_endpoint(buffer, deepgram_response, time_silent):
-                            output_ts = now()
-                            self._track_latency_of_conversation(
-                                is_final_ts=is_final_ts,
-                                output_ts=output_ts,
-                            )
-                            self.output_queue.put_nowait(
-                                Transcription(
-                                    message=buffer,
-                                    confidence=buffer_avg_confidence,
-                                    is_final=True,
-                                    duration_seconds=self.calculate_duration(words_buffer),
-                                )
-                            )
-                            buffer = ""
-                            buffer_avg_confidence = 0.0
-                            num_buffer_utterances = 1
-                            time_silent = 0.0
-                            words_buffer = []
-                            is_final_ts = None
-
-                        if isinstance(deepgram_response, DeepgramTranscriptionResult):
-                            if (
-                                isinstance(deepgram_response, DeepgramTranscriptionResult)
-                                and deepgram_response.top_choice.transcript
-                                and deepgram_response.top_choice.confidence > 0.0
-                            ):
-                                if not deepgram_response.is_final:
-                                    interim_message = (
-                                        f"{buffer} {deepgram_response.top_choice.transcript}"
-                                    )
-                                else:
-                                    interim_message = buffer
-
-                                self.output_queue.put_nowait(
-                                    Transcription(
-                                        message=interim_message,
-                                        confidence=deepgram_response.top_choice.confidence,
-                                        is_final=False,
-                                    )
-                                )
-                                time_silent = self.calculate_time_silent(deepgram_response)
-                            else:
-                                time_silent += deepgram_response.duration
-
-                    logger.debug("Terminating Deepgram transcriber receiver")
-
-                await asyncio.gather(sender(ws), receiver(ws))
+            logger.debug("Terminating Deepgram transcriber sender")
+            await self._dgClient.finish()
 
         except asyncio.exceptions.TimeoutError:
             raise
@@ -538,42 +539,42 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
         with sentry_create_span(
             sentry_callable=sentry_sdk.start_span,
             op=CustomSentrySpans.LATENCY_OF_TRANSCRIPTION_START,
-            start_timestamp=self.start_ts,
+            start_timestamp=self._start_ts,
         ) as transcription_span:
 
             with sentry_create_span(
                 sentry_callable=transcription_span.start_child,
                 op=CustomSentrySpans.START_TO_CONNECTION,
-                start_timestamp=self.start_ts,
+                start_timestamp=self._start_ts,
             ) as span:
-                span.finish(end_timestamp=self.connected_ts)
+                span.finish(end_timestamp=self._connected_ts)
 
             with sentry_create_span(
                 sentry_callable=transcription_span.start_child,
                 op=CustomSentrySpans.CONNECTED_TO_FIRST_SEND,
-                start_timestamp=self.connected_ts,
+                start_timestamp=self._connected_ts,
             ) as span:
-                span.finish(end_timestamp=self.start_sending_ts)
+                span.finish(end_timestamp=self._start_sending_ts)
 
             with sentry_create_span(
                 sentry_callable=transcription_span.start_child,
                 op=CustomSentrySpans.FIRST_SEND_TO_FIRST_RECEIVE,
-                start_timestamp=self.start_sending_ts,
+                start_timestamp=self._start_sending_ts,
             ) as span:
-                span.finish(end_timestamp=self.start_receiving_ts)
-            transcription_span.finish(end_timestamp=self.start_receiving_ts)
+                span.finish(end_timestamp=self._start_receiving_ts)
+            transcription_span.finish(end_timestamp=self._start_receiving_ts)
 
     def _track_transcription_latency(self, start: float, duration: float):
-        cur_max_latency = self.audio_cursor - self.transcript_cursor
+        cur_max_latency = self._audio_cursor - self._transcript_cursor
         transcript_cursor = start + duration
-        cur_min_latency = self.audio_cursor - transcript_cursor
+        cur_min_latency = self._audio_cursor - transcript_cursor
 
-        self.max_latency = max(self.max_latency or 0, cur_max_latency)
-        self.min_latency = min(self.min_latency or 10**6, cur_min_latency)
+        self._max_latency = max(self._max_latency or 0, cur_max_latency)
+        self._min_latency = min(self._min_latency or 10**6, cur_min_latency)
 
-        self.avg_latency_numer += (cur_min_latency + cur_max_latency) / 2 * duration
-        self.avg_latency_denom += duration
-        self.avg_latency = self.avg_latency_numer / (self.avg_latency_denom or 1)
+        self._avg_latency_numer += (cur_min_latency + cur_max_latency) / 2 * duration
+        self._avg_latency_denom += duration
+        self._avg_latency = self._avg_latency_numer / (self._avg_latency_denom or 1)
 
     def _track_latency_of_conversation(
         self,

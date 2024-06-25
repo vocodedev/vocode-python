@@ -13,6 +13,7 @@ from vocode.streaming.telephony.constants import DEFAULT_AUDIO_ENCODING, DEFAULT
 class SynthesizerType(str, Enum):
     BASE = "synthesizer_base"
     AZURE = "synthesizer_azure"
+    DEEPGRAM = "synthesizer_deepgram"
     GOOGLE = "synthesizer_google"
     ELEVEN_LABS = "synthesizer_eleven_labs"
     RIME = "synthesizer_rime"
@@ -79,6 +80,25 @@ class AzureSynthesizerConfig(SynthesizerConfig, type=SynthesizerType.AZURE.value
     pitch: int = AZURE_SYNTHESIZER_DEFAULT_PITCH
     rate: int = AZURE_SYNTHESIZER_DEFAULT_RATE
     language_code: str = "en-US"
+
+
+DEEPGRAM_DEFAULT_AUDIO_ENCODING = "mp3"
+
+
+class DeepgramSynthesizerConfig(SynthesizerConfig, type=SynthesizerType.DEEPGRAM.value):
+    """
+    Please see the Deepgram API documentation for more information on these parameters:
+    https://github.com/deepgram/deepgram-python-sdk/blob/main/deepgram/clients/speak/v1/options.py
+    """
+
+    # default is "aura-asteria-en": https://developers.deepgram.com/docs/tts-models
+    model: Optional[str]
+    bit_rate: Optional[str]
+    container: Optional[str]
+    audio_encoding: str = DEEPGRAM_DEFAULT_AUDIO_ENCODING
+    sample_rate: Optional[str]
+
+    experimental_streaming: Optional[bool] = False
 
 
 DEFAULT_GOOGLE_LANGUAGE_CODE = "en-US"
