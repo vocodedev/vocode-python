@@ -3,6 +3,7 @@ from vocode.streaming.models.synthesizer import (
     AzureSynthesizerConfig,
     CartesiaSynthesizerConfig,
     ElevenLabsSynthesizerConfig,
+    OrcaSynthesizerConfig,
     PlayHtSynthesizerConfig,
     RimeSynthesizerConfig,
     StreamElementsSynthesizerConfig,
@@ -14,6 +15,7 @@ from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer
 from vocode.streaming.synthesizer.cartesia_synthesizer import CartesiaSynthesizer
 from vocode.streaming.synthesizer.eleven_labs_synthesizer import ElevenLabsSynthesizer
 from vocode.streaming.synthesizer.eleven_labs_websocket_synthesizer import ElevenLabsWSSynthesizer
+from vocode.streaming.synthesizer.orca_synthesizer import OrcaSynthesizer
 from vocode.streaming.synthesizer.play_ht_synthesizer import PlayHtSynthesizer
 from vocode.streaming.synthesizer.play_ht_synthesizer_v2 import PlayHtSynthesizerV2
 from vocode.streaming.synthesizer.rime_synthesizer import RimeSynthesizer
@@ -34,6 +36,8 @@ class DefaultSynthesizerFactory(AbstractSynthesizerFactory):
             if synthesizer_config.experimental_websocket:
                 eleven_labs_synthesizer_class_type = ElevenLabsWSSynthesizer
             return eleven_labs_synthesizer_class_type(synthesizer_config)
+        elif isinstance(synthesizer_config, OrcaSynthesizerConfig):
+            return OrcaSynthesizer(synthesizer_config)
         elif isinstance(synthesizer_config, PlayHtSynthesizerConfig):
             if synthesizer_config.version == "2":
                 return PlayHtSynthesizerV2(synthesizer_config)
