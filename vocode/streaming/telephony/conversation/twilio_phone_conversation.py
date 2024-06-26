@@ -99,7 +99,7 @@ class TwilioPhoneConversation(AbstractPhoneConversation[TwilioOutputDevice]):
                 from_phone_number=self.from_phone,
             )
         )
-        while self.active:
+        while self.is_active():
             message = await ws.receive_text()
             response = await self._handle_ws_message(message)
             if response == TwilioPhoneConversationWebsocketAction.CLOSE_WEBSOCKET:

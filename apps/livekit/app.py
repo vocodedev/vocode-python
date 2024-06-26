@@ -1,9 +1,7 @@
 import asyncio
-from functools import partial
 import os
 from livekit.agents import JobContext, JobRequest, WorkerOptions, cli
 from loguru import logger
-from livekit import rtc
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from vocode.logging import configure_pretty_logging
@@ -17,9 +15,15 @@ from vocode.streaming.models.transcriber import (
     PunctuationEndpointingConfig,
 )
 from vocode.streaming.output_device.livekit_output_device import LiveKitOutputDevice
-from vocode.streaming.streaming_conversation import StreamingConversation
 from vocode.streaming.synthesizer.eleven_labs_synthesizer import ElevenLabsSynthesizer
 from vocode.streaming.transcriber.deepgram_transcriber import DeepgramTranscriber
+from vocode.streaming.livekit.livekit_conversation import LiveKitConversation
+from vocode.streaming.action.end_conversation import EndConversationVocodeActionConfig
+from vocode.streaming.models.actions import (
+    PhraseBasedActionTrigger,
+    PhraseBasedActionTriggerConfig,
+    PhraseTrigger,
+)
 
 
 class Settings(BaseSettings):
@@ -37,67 +41,19 @@ class Settings(BaseSettings):
     )
 
 
-async def create_audio_source(
-    room: rtc.Room, sample_rate: int = 48000, num_channels: int = 1
-) -> rtc.AudioSource:
-    source = rtc.AudioSource(sample_rate, num_channels)
-    track = rtc.LocalAudioTrack.create_audio_track("agent-synthesis", source)
-    options = rtc.TrackPublishOptions()
-    options.source = rtc.TrackSource.SOURCE_MICROPHONE
-    await room.local_participant.publish_track(track, options)
-
-    return source
-
-
-async def send_frames_to_conversation(
-    conversation: StreamingConversation,
-    audio_queue: asyncio.Queue[bytes],
-):
-    while conversation.is_active():
-        chunk = await audio_queue.get()
-        conversation.receive_audio(chunk)
-
-
-def on_track_subscribed(
-    audio_queue: asyncio.Queue,
-    conversation_ready: asyncio.Event,
-    track: rtc.Track,
-    publication: rtc.RemoteTrackPublication,
-    participant: rtc.RemoteParticipant,
-):
-    logger.info("track subscribed: %s", publication.sid)
-    if track.kind == rtc.TrackKind.KIND_AUDIO:
-        audio_stream = rtc.AudioStream(track)
-        asyncio.ensure_future(receive_frames(audio_queue, conversation_ready, audio_stream))
-
-
-async def receive_frames(
-    audio_queue: asyncio.Queue,
-    conversation_ready: asyncio.Event,
-    audio_stream: rtc.AudioStream,
-):
-    # this is where we will send the frames to transcription
-    async for event in audio_stream:
-        if conversation_ready.is_set():
-            frame = event.frame
-            audio_queue.put_nowait(bytes(frame.data))
+async def wait_for_termination(conversation: LiveKitConversation, ctx: JobContext):
+    await conversation.wait_for_termination()
+    await conversation.terminate()
+    await ctx.room.disconnect()
 
 
 async def entrypoint(ctx: JobContext):
-    conversation_ready = asyncio.Event()
-    audio_queue = asyncio.Queue()
-
-    ctx.room.on("track_subscribed", partial(on_track_subscribed, audio_queue, conversation_ready))
-    source = await create_audio_source(ctx.room)
-
-    output_device = LiveKitOutputDevice(
-        sampling_rate=48000,
-        audio_encoding=AudioEncoding.LINEAR16,
-        source=source,
-    )
-
-    conversation = StreamingConversation(
-        output_device=output_device,
+    configure_pretty_logging()
+    conversation = LiveKitConversation(
+        output_device=LiveKitOutputDevice(
+            sampling_rate=48000,
+            audio_encoding=AudioEncoding.LINEAR16,
+        ),
         transcriber=DeepgramTranscriber(
             DeepgramTranscriberConfig(
                 audio_encoding=AudioEncoding.LINEAR16,
@@ -112,6 +68,20 @@ async def entrypoint(ctx: JobContext):
                 openai_api_key=os.getenv("OPENAI_API_KEY"),
                 initial_message=BaseMessage(text="What up"),
                 prompt_preamble="""The AI is having a pleasant conversation about life""",
+                actions=[
+                    EndConversationVocodeActionConfig(
+                        action_trigger=PhraseBasedActionTrigger(
+                            config=PhraseBasedActionTriggerConfig(
+                                phrase_triggers=[
+                                    PhraseTrigger(
+                                        phrase="goodbye",
+                                        conditions=["phrase_condition_type_contains"],
+                                    )
+                                ]
+                            )
+                        )
+                    )
+                ],
             )
         ),
         synthesizer=ElevenLabsSynthesizer(
@@ -123,9 +93,8 @@ async def entrypoint(ctx: JobContext):
             )
         ),
     )
-    await conversation.start()
-    conversation_ready.set()
-    asyncio.create_task(send_frames_to_conversation(conversation, audio_queue))
+    await conversation.start_room(ctx.room)
+    asyncio.create_task(wait_for_termination(conversation, ctx))
 
 
 async def request_fnc(req: JobRequest) -> None:
@@ -134,8 +103,6 @@ async def request_fnc(req: JobRequest) -> None:
 
 
 if __name__ == "__main__":
-    configure_pretty_logging()
-
     settings = Settings()
     cli.run_app(
         WorkerOptions(

@@ -661,7 +661,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         self.transcript.attach_events_manager(self.events_manager)
 
         self.is_human_speaking = False
-        self.active = False
+        self.is_terminated = asyncio.Event()
         self.mark_last_action_timestamp()
 
         self.check_for_idle_task: Optional[asyncio.Task] = None
@@ -718,7 +718,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         self.agent.attach_transcript(self.transcript)
         if mark_ready:
             await mark_ready()
-        self.active = True
+        self.is_terminated.clear()
         self.check_for_idle_task = asyncio_create_task_with_done_error_log(
             self.check_for_idle(),
         )
@@ -988,7 +988,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         return message_sent, cut_off
 
     def mark_terminated(self, bot_disconnect: bool = False):
-        self.active = False
+        self.is_terminated.set()
 
     async def terminate(self):
         self.mark_terminated()
@@ -1035,4 +1035,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         logger.debug("Successfully terminated")
 
     def is_active(self):
-        return self.active
+        return not self.is_terminated.is_set()
+
+    async def wait_for_termination(self):
+        await self.is_terminated.wait()
