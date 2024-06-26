@@ -1,20 +1,39 @@
 import asyncio
 from vocode.streaming.models.audio import AudioEncoding
-from vocode.streaming.output_device.base_output_device import BaseOutputDevice
-from vocode.streaming.utils.worker import AsyncQueueWorker
+from vocode.streaming.output_device.abstract_output_device import AbstractOutputDevice
 from livekit import rtc
+from vocode.streaming.output_device.audio_chunk import ChunkState
 
 NUM_CHANNELS = 1
 
 
-class LiveKitOutputDevice(AsyncQueueWorker, BaseOutputDevice):
+class LiveKitOutputDevice(AbstractOutputDevice):
     source: rtc.AudioSource
     track: rtc.LocalAudioTrack
     room: rtc.Room
 
     def __init__(self, sampling_rate: int, audio_encoding: AudioEncoding):
-        BaseOutputDevice.__init__(self, sampling_rate, audio_encoding)
-        AsyncQueueWorker.__init__(self, input_queue=asyncio.Queue())
+        super().__init__(sampling_rate, audio_encoding)
+
+    async def _run_loop(self):
+        while True:
+            try:
+                item = await self.input_queue.get()
+            except asyncio.CancelledError:
+                return
+
+            self.interruptible_event = item
+            audio_chunk = item.payload
+
+            if item.is_interrupted():
+                audio_chunk.on_interrupt()
+                audio_chunk.state = ChunkState.INTERRUPTED
+                continue
+
+            await self.play(audio_chunk.data)
+            audio_chunk.on_play()
+            audio_chunk.state = ChunkState.PLAYED
+            self.interruptible_event.is_interruptible = False
 
     async def initialize_source(self, room: rtc.Room):
         """Creates the AudioSource that will be used to capture audio frames.
@@ -33,8 +52,11 @@ class LiveKitOutputDevice(AsyncQueueWorker, BaseOutputDevice):
     async def uninitialize_source(self):
         await self.room.local_participant.unpublish_track(self.track.sid)
 
-    async def process(self, item: bytes):
+    async def play(self, item: bytes):
         audio_frame = rtc.AudioFrame(
             item, self.sampling_rate, num_channels=1, samples_per_channel=len(item) // 2
         )
         return await self.source.capture_frame(audio_frame)
+
+    def interrupt(self):
+        pass
