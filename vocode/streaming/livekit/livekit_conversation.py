@@ -1,19 +1,27 @@
 import asyncio
-from typing import Awaitable, Callable
 
 from loguru import logger
+from vocode.streaming.livekit.livekit_events_manager import LiveKitEventsManager
 from vocode.streaming.streaming_conversation import StreamingConversation
 from vocode.streaming.output_device.livekit_output_device import LiveKitOutputDevice
 from livekit import rtc
 
 
 class LiveKitConversation(StreamingConversation[LiveKitOutputDevice]):
+    room: rtc.Room
+    user_track: rtc.Track
+    user_participant: rtc.RemoteParticipant
 
     def __init__(self, *args, **kwargs):
+        if kwargs.get("events_manager") is None:
+            events_manager = LiveKitEventsManager()
+            events_manager.attach_conversation(self)
+            kwargs["events_manager"] = events_manager
         super().__init__(*args, **kwargs)
         self.receive_frames_task: asyncio.Task | None = None
 
     async def start_room(self, room: rtc.Room):
+        self.room = room
         room.on("track_subscribed", self._on_track_subscribed)
         room.on("track_unsubscribed", self._on_track_unsubscribed)
 
@@ -29,6 +37,8 @@ class LiveKitConversation(StreamingConversation[LiveKitOutputDevice]):
     ):
         logger.info("track subscribed: %s", publication.sid)
         if track.kind == rtc.TrackKind.KIND_AUDIO:
+            self.user_participant = participant
+            self.user_track = track
             audio_stream = rtc.AudioStream(track)
             self.receive_frames_task = asyncio.create_task(self._receive_frames(audio_stream))
 
