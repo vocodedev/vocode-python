@@ -34,7 +34,7 @@ class PlayHtSynthesizer(BaseSynthesizer[PlayHtSynthesizerConfig]):
         self.max_backoff_retries = max_backoff_retries
         self.backoff_retry_delay = backoff_retry_delay
 
-    async def create_speech_uncached(
+    async def create_speech(
         self,
         message: BaseMessage,
         chunk_size: int,

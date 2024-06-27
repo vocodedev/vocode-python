@@ -23,7 +23,7 @@ class CoquiTTSSynthesizer(BaseSynthesizer[CoquiTTSSynthesizerConfig]):
         self.language = synthesizer_config.language
         self.thread_pool_executor = ThreadPoolExecutor(max_workers=1)
 
-    async def create_speech(
+    async def create_speech_with_cache(
         self,
         message: BaseMessage,
         chunk_size: int,

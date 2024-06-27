@@ -65,7 +65,7 @@ class ElevenLabsSynthesizer(BaseSynthesizer[ElevenLabsSynthesizerConfig]):
                 f"Unsupported audio encoding: {self.synthesizer_config.audio_encoding}"
             )
 
-    async def create_speech_uncached(
+    async def create_speech(
         self,
         message: BaseMessage,
         chunk_size: int,

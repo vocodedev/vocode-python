@@ -53,7 +53,7 @@ class GladiaTranscriber(BaseAsyncTranscriber[GladiaTranscriberConfig]):
         if (
             len(self.buffer) / (2 * self.transcriber_config.sampling_rate)
         ) >= self.transcriber_config.buffer_size_seconds:
-            self.input_queue.put_nowait(self.buffer)
+            self.consume_nonblocking(self.buffer)
             self.buffer = bytearray()
 
     def terminate(self):
@@ -104,7 +104,7 @@ class GladiaTranscriber(BaseAsyncTranscriber[GladiaTranscriberConfig]):
                         is_final = data["type"] == "final"
 
                         if "transcription" in data and data["transcription"]:
-                            self.output_queue.put_nowait(
+                            self.produce_nonblocking(
                                 Transcription(
                                     message=data["transcription"],
                                     confidence=data["confidence"],

@@ -1,9 +1,13 @@
+from abc import ABC, abstractmethod
+
 from pydub import AudioSegment
 
 
-class BaseOutputDevice:
+class AbstractOutputDevice(ABC):
+
+    @abstractmethod
     def send_audio(self, audio: AudioSegment) -> None:
-        raise NotImplementedError
+        pass
 
     def terminate(self):
         pass

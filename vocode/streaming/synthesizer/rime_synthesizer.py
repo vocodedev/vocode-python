@@ -51,7 +51,7 @@ class RimeSynthesizer(BaseSynthesizer[RimeSynthesizerConfig]):
             )
         )
 
-    async def create_speech_uncached(
+    async def create_speech(
         self,
         message: BaseMessage,
         chunk_size: int,

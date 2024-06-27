@@ -135,3 +135,12 @@ async def generate_from_async_iter_with_lookahead(
             if buffer and stream_length <= lookahead:
                 yield buffer
             return
+
+
+async def enumerate_async_iter(
+    async_iter: AsyncIterator[AsyncIteratorGenericType],
+) -> AsyncGenerator[Tuple[int, AsyncIteratorGenericType], None]:
+    i = 0
+    async for item in async_iter:
+        yield i, item
+        i += 1

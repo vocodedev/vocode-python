@@ -218,9 +218,11 @@ class AzureSynthesizer(BaseSynthesizer[AzureSynthesizerConfig]):
         self,
         message: str,
         ssml: str,
-        seconds: float,
+        seconds: Optional[float],
         word_boundary_event_pool: WordBoundaryEventPool,
     ) -> str:
+        if seconds is None:
+            return message
         events = word_boundary_event_pool.get_events_sorted()
         for event in events:
             if event["audio_offset"] > seconds:
@@ -229,7 +231,7 @@ class AzureSynthesizer(BaseSynthesizer[AzureSynthesizerConfig]):
                 return ssml_fragment.split(">")[-1]
         return message
 
-    async def create_speech_uncached(
+    async def create_speech(
         self,
         message: BaseMessage,
         chunk_size: int,

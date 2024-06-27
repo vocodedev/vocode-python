@@ -76,7 +76,7 @@ class PlayHtSynthesizerV2(VocodePlayHtSynthesizer):
             return self.playht_client_on_prem
         return self.playht_client_saas
 
-    async def create_speech_uncached(
+    async def create_speech(
         self,
         message: BaseMessage,
         chunk_size: int,

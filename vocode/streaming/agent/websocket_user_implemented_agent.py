@@ -8,8 +8,7 @@ from websockets.client import WebSocketClientProtocol, connect
 from vocode.streaming.agent.base_agent import (
     AgentInput,
     AgentResponse,
-    AgentResponseMessage,
-    AgentResponseStop,
+    AgentResponse,
     BaseAgent,
     TranscriptionAgentInput,
 )
@@ -27,7 +26,6 @@ NUM_RESTARTS = 5
 
 class WebSocketUserImplementedAgent(BaseAgent[WebSocketUserImplementedAgentConfig]):
     input_queue: asyncio.Queue[InterruptibleEvent[AgentInput]]
-    output_queue: asyncio.Queue[InterruptibleAgentResponseEvent[AgentResponse]]
 
     def __init__(
         self,
@@ -49,22 +47,25 @@ class WebSocketUserImplementedAgent(BaseAgent[WebSocketUserImplementedAgentConfi
             restarts += 1
             logger.debug("Socket Agent connection died, restarting, num_restarts: %s", restarts)
 
-    def _handle_incoming_socket_message(self, message: WebSocketAgentMessage) -> None:
+    async def _handle_incoming_socket_message(self, message: WebSocketAgentMessage) -> None:
         logger.info("Handling incoming message from Socket Agent: %s", message)
 
         agent_response: AgentResponse
 
         if isinstance(message, WebSocketAgentTextMessage):
-            agent_response = AgentResponseMessage(message=BaseMessage(text=message.data.text))
+            agent_response = AgentResponse(message=BaseMessage(text=message.data.text))
         elif isinstance(message, WebSocketAgentStopMessage):
-            agent_response = AgentResponseStop()
+            await self.conversation_state_manager.terminate_conversation()
             self.has_ended = True
         else:
             raise Exception("Unknown Socket message type")
 
         logger.info("Putting interruptible agent response event in output queue")
-        self.produce_interruptible_agent_response_event_nonblocking(
-            agent_response, self.get_agent_config().allow_agent_to_be_cut_off
+        self.agent_responses_consumer.consume_nonblocking(
+            self.interruptible_event_factory.create_interruptible_agent_response_event(
+                agent_response,
+                is_interruptible=self.get_agent_config().allow_agent_to_be_cut_off,
+            )
         )
 
     async def _process(self) -> None:
@@ -90,9 +91,6 @@ class WebSocketUserImplementedAgent(BaseAgent[WebSocketUserImplementedAgentConfi
                             )
                             agent_request_json = agent_request.json()
                             logger.info(f"Sending data to web socket agent: {agent_request_json}")
-                            if isinstance(agent_request, AgentResponseStop):
-                                # In practice, it doesn't make sense for the client to send a text and stop message to the agent service
-                                self.has_ended = True
 
                             await ws.send(agent_request_json)
 
@@ -114,7 +112,7 @@ class WebSocketUserImplementedAgent(BaseAgent[WebSocketUserImplementedAgentConfi
                         logger.info("Received data from web socket agent")
                         data = json.loads(msg)
                         message = WebSocketAgentMessage.parse_obj(data)
-                        self._handle_incoming_socket_message(message)
+                        await self._handle_incoming_socket_message(message)
 
                     except websockets.exceptions.ConnectionClosed as e:
                         logger.error(f'WebSocket Agent Receive Error: Connection Closed - "{e}"')
@@ -135,7 +133,3 @@ class WebSocketUserImplementedAgent(BaseAgent[WebSocketUserImplementedAgentConfi
                 logger.debug("Terminating Web Socket User Implemented Agent receiver")
 
             await asyncio.gather(sender(ws), receiver(ws))
-
-    def terminate(self):
-        self.produce_interruptible_agent_response_event_nonblocking(AgentResponseStop())
-        super().terminate()

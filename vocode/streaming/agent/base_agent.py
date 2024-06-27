@@ -38,6 +38,7 @@ from vocode.streaming.models.transcript import Message, Transcript
 from vocode.streaming.utils import unrepeating_randomizer
 from vocode.streaming.utils.speed_manager import SpeedManager
 from vocode.streaming.utils.worker import (
+    AbstractWorker,
     InterruptibleAgentResponseEvent,
     InterruptibleEvent,
     InterruptibleEventFactory,
@@ -87,35 +88,13 @@ class ActionResultAgentInput(AgentInput, type=AgentInputType.ACTION_RESULT.value
     is_quiet: bool = False
 
 
-class AgentResponseType(str, Enum):
-    BASE = "agent_response_base"
-    MESSAGE = "agent_response_message"
-    STOP = "agent_response_stop"
-    FILLER_AUDIO = "agent_response_filler_audio"
-
-
-class AgentResponse(TypedModel, type=AgentResponseType.BASE.value):  # type: ignore
-    pass
-
-
-class AgentResponseMessage(AgentResponse, type=AgentResponseType.MESSAGE.value):  # type: ignore
+class AgentResponse(BaseModel):
     message: Union[BaseMessage, EndOfTurn]
     is_interruptible: bool = True
     # Whether the message is the first message in the response; has metrics implications
     is_first: bool = False
     # If the response is not being chunked up into multiple sentences, this is set to True
     is_sole_text_chunk: bool = False
-
-
-class AgentResponseStop(AgentResponse, type=AgentResponseType.STOP.value):  # type: ignore
-    pass
-
-
-class AgentResponseFillerAudio(
-    AgentResponse,
-    type=AgentResponseType.FILLER_AUDIO.value,  # type: ignore
-):
-    pass
 
 
 class GeneratedResponse(BaseModel):
@@ -154,6 +133,9 @@ class AbstractAgent(Generic[AgentConfigType]):
 
 
 class BaseAgent(AbstractAgent[AgentConfigType], InterruptibleWorker):
+    agent_responses_consumer: AbstractWorker[InterruptibleAgentResponseEvent[AgentResponse]]
+    actions_consumer: Optional[AbstractWorker[InterruptibleEvent[ActionInput]]]
+
     def __init__(
         self,
         agent_config: AgentConfigType,
@@ -161,18 +143,12 @@ class BaseAgent(AbstractAgent[AgentConfigType], InterruptibleWorker):
         interruptible_event_factory: InterruptibleEventFactory = InterruptibleEventFactory(),
     ):
         self.input_queue: asyncio.Queue[InterruptibleEvent[AgentInput]] = asyncio.Queue()
-        self.output_queue: asyncio.Queue[InterruptibleAgentResponseEvent[AgentResponse]] = (
-            asyncio.Queue()
-        )
         AbstractAgent.__init__(self, agent_config=agent_config)
         InterruptibleWorker.__init__(
             self,
-            input_queue=self.input_queue,
-            output_queue=self.output_queue,
             interruptible_event_factory=interruptible_event_factory,
         )
         self.action_factory = action_factory
-        self.actions_queue: asyncio.Queue[InterruptibleEvent[ActionInput]] = asyncio.Queue()
         self.transcript: Optional[Transcript] = None
 
         self.functions = self.get_functions() if self.agent_config.actions else None
@@ -210,11 +186,6 @@ class BaseAgent(AbstractAgent[AgentConfigType], InterruptibleWorker):
         self,
     ) -> asyncio.Queue[InterruptibleEvent[AgentInput]]:
         return self.input_queue
-
-    def get_output_queue(
-        self,
-    ) -> asyncio.Queue[InterruptibleAgentResponseEvent[AgentResponse]]:
-        return self.output_queue
 
     def is_first_response(self):
         assert self.transcript is not None
@@ -255,7 +226,7 @@ class RespondAgent(BaseAgent[AgentConfigType]):
         self,
         transcription: Transcription,
         agent_input: AgentInput,
-    ) -> bool:
+    ):
         conversation_id = agent_input.conversation_id
         responses = self._maybe_prepend_interrupt_responses(
             transcription=transcription,
@@ -299,14 +270,16 @@ class RespondAgent(BaseAgent[AgentConfigType]):
                 continue
 
             agent_response_tracker = agent_input.agent_response_tracker or asyncio.Event()
-            self.produce_interruptible_agent_response_event_nonblocking(
-                AgentResponseMessage(
-                    message=generated_response.message,
-                    is_first=is_first_response_of_turn,
+            self.agent_responses_consumer.consume_nonblocking(
+                self.interruptible_event_factory.create_interruptible_agent_response_event(
+                    AgentResponse(
+                        message=generated_response.message,
+                        is_first=is_first_response_of_turn,
+                    ),
+                    is_interruptible=self.agent_config.allow_agent_to_be_cut_off
+                    and generated_response.is_interruptible,
+                    agent_response_tracker=agent_response_tracker,
                 ),
-                is_interruptible=self.agent_config.allow_agent_to_be_cut_off
-                and generated_response.is_interruptible,
-                agent_response_tracker=agent_response_tracker,
             )
             if isinstance(generated_response.message, BaseMessage):
                 responses_buffer = f"{responses_buffer} {generated_response.message.text}"
@@ -330,14 +303,15 @@ class RespondAgent(BaseAgent[AgentConfigType]):
             end_of_turn_agent_response_tracker = (
                 agent_input.agent_response_tracker or asyncio.Event()
             )
-            self.produce_interruptible_agent_response_event_nonblocking(
-                AgentResponseMessage(
-                    message=EndOfTurn(),
-                    is_first=is_first_response_of_turn,
+            self.agent_responses_consumer.consume_nonblocking(
+                self.interruptible_event_factory.create_interruptible_agent_response_event(
+                    AgentResponse(
+                        message=EndOfTurn(),
+                        is_first=is_first_response_of_turn,
+                    ),
+                    is_interruptible=self.agent_config.allow_agent_to_be_cut_off,
+                    agent_response_tracker=end_of_turn_agent_response_tracker,
                 ),
-                is_interruptible=self.agent_config.allow_agent_to_be_cut_off
-                and generated_response.is_interruptible,
-                agent_response_tracker=end_of_turn_agent_response_tracker,
             )
 
         phrase_trigger_match = (
@@ -357,14 +331,12 @@ class RespondAgent(BaseAgent[AgentConfigType]):
             )
             self.enqueue_action_input(action, action_input, agent_input.conversation_id)
 
-        # TODO: implement should_stop for generate_responses
         if function_call and self.agent_config.actions is not None:
             await self.call_function(function_call, agent_input)
-        return False
 
     async def handle_respond(self, transcription: Transcription, conversation_id: str) -> bool:
         try:
-            response, should_stop = await self.respond(
+            response = await self.respond(
                 transcription.message,
                 is_interrupt=transcription.is_interrupt,
                 conversation_id=conversation_id,
@@ -374,15 +346,18 @@ class RespondAgent(BaseAgent[AgentConfigType]):
             response = None
             return True
         if response:
-            self.produce_interruptible_agent_response_event_nonblocking(
-                AgentResponseMessage(message=BaseMessage(text=response)),
-                is_interruptible=self.agent_config.allow_agent_to_be_cut_off,
+            self.agent_responses_consumer.consume_nonblocking(
+                self.interruptible_event_factory.create_interruptible_agent_response_event(
+                    AgentResponse(message=BaseMessage(text=response)),
+                    is_interruptible=self.agent_config.allow_agent_to_be_cut_off,
+                )
             )
-            self.produce_interruptible_agent_response_event_nonblocking(
-                AgentResponseMessage(message=EndOfTurn()),
-                is_interruptible=self.agent_config.allow_agent_to_be_cut_off,
+            self.agent_responses_consumer.consume_nonblocking(
+                self.interruptible_event_factory.create_interruptible_agent_response_event(
+                    AgentResponse(message=EndOfTurn()),
+                    is_interruptible=self.agent_config.allow_agent_to_be_cut_off,
+                )
             )
-            return should_stop
         else:
             logger.debug("No response generated")
         return False
@@ -408,15 +383,19 @@ class RespondAgent(BaseAgent[AgentConfigType]):
                     logger.debug("Action is quiet, skipping response generation")
                     return
                 if agent_input.action_output.canned_response is not None:
-                    self.produce_interruptible_agent_response_event_nonblocking(
-                        AgentResponseMessage(
-                            message=agent_input.action_output.canned_response,
-                            is_sole_text_chunk=True,
-                        ),
-                        is_interruptible=True,
+                    self.agent_responses_consumer.consume_nonblocking(
+                        self.interruptible_event_factory.create_interruptible_agent_response_event(
+                            AgentResponse(
+                                message=agent_input.action_output.canned_response,
+                                is_sole_text_chunk=True,
+                            ),
+                            is_interruptible=True,
+                        )
                     )
-                    self.produce_interruptible_agent_response_event_nonblocking(
-                        AgentResponseMessage(message=EndOfTurn()),
+                    self.agent_responses_consumer.consume_nonblocking(
+                        self.interruptible_event_factory.create_interruptible_agent_response_event(
+                            AgentResponse(message=EndOfTurn()),
+                        )
                     )
                     return
                 transcription = Transcription(
@@ -431,13 +410,7 @@ class RespondAgent(BaseAgent[AgentConfigType]):
                 logger.debug("Agent is muted, skipping processing")
                 return
 
-            if self.agent_config.send_filler_audio:
-                self.produce_interruptible_agent_response_event_nonblocking(
-                    AgentResponseFillerAudio(),
-                )
-
             logger.debug("Responding to transcription")
-            should_stop = False
             if self.agent_config.generate_responses:
                 # TODO (EA): this is quite ugly but necessary to have the agent act properly after an action completes
                 if not isinstance(agent_input, ActionResultAgentInput):
@@ -445,14 +418,9 @@ class RespondAgent(BaseAgent[AgentConfigType]):
                         sentry_callable=sentry_sdk.start_span,
                         op=CustomSentrySpans.LANGUAGE_MODEL_TIME_TO_FIRST_TOKEN,
                     )
-                should_stop = await self.handle_generate_response(transcription, agent_input)
+                await self.handle_generate_response(transcription, agent_input)
             else:
-                should_stop = await self.handle_respond(transcription, agent_input.conversation_id)
-
-            if should_stop:
-                logger.debug("Agent requested to stop")
-                self.produce_interruptible_agent_response_event_nonblocking(AgentResponseStop())
-                return
+                await self.handle_respond(transcription, agent_input.conversation_id)
         except asyncio.CancelledError:
             pass
 
@@ -478,16 +446,20 @@ class RespondAgent(BaseAgent[AgentConfigType]):
         if "user_message" in params:
             user_message = params["user_message"]
             user_message_tracker = asyncio.Event()
-            self.produce_interruptible_agent_response_event_nonblocking(
-                AgentResponseMessage(
-                    message=BaseMessage(text=user_message),
-                    is_sole_text_chunk=True,
-                ),
-                is_interruptible=action.is_interruptible,
+            self.agent_responses_consumer.consume_nonblocking(
+                self.interruptible_event_factory.create_interruptible_agent_response_event(
+                    AgentResponse(
+                        message=BaseMessage(text=user_message),
+                        is_sole_text_chunk=True,
+                    ),
+                    is_interruptible=action.is_interruptible,
+                )
             )
-            self.produce_interruptible_agent_response_event_nonblocking(
-                AgentResponseMessage(message=EndOfTurn()),
-                agent_response_tracker=user_message_tracker,
+            self.agent_responses_consumer.consume_nonblocking(
+                self.interruptible_event_factory.create_interruptible_agent_response_event(
+                    AgentResponse(message=EndOfTurn()),
+                    agent_response_tracker=user_message_tracker,
+                )
             )
         action_input = self.create_action_input(action, agent_input, params, user_message_tracker)
         self.enqueue_action_input(action, action_input, agent_input.conversation_id)
@@ -534,6 +506,9 @@ class RespondAgent(BaseAgent[AgentConfigType]):
         action_input: ActionInput,
         conversation_id: str,
     ):
+        if self.actions_consumer is None:
+            logger.warning("No actions consumer attached, skipping action")
+            return
         event = self.interruptible_event_factory.create_interruptible_event(
             action_input,
             is_interruptible=action.is_interruptible,
@@ -543,14 +518,14 @@ class RespondAgent(BaseAgent[AgentConfigType]):
             action_input=action_input,
             conversation_id=conversation_id,
         )
-        self.actions_queue.put_nowait(event)
+        self.actions_consumer.consume_nonblocking(event)
 
     async def respond(
         self,
         human_input,
         conversation_id: str,
         is_interrupt: bool = False,
-    ) -> Tuple[Optional[str], bool]:
+    ) -> Optional[str]:
         raise NotImplementedError
 
     def generate_response(

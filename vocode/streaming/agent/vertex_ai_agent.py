@@ -1,6 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import Tuple
+from typing import Optional, Tuple
 
 from langchain import ConversationChain
 from langchain.memory import ConversationBufferMemory
@@ -44,7 +44,7 @@ class ChatVertexAIAgent(RespondAgent[ChatVertexAIAgentConfig]):
         human_input,
         conversation_id: str,
         is_interrupt: bool = False,
-    ) -> Tuple[str, bool]:
+    ) -> Optional[str]:
         # Vertex AI doesn't allow async, so we run in a separate thread
         text = await asyncio.get_event_loop().run_in_executor(
             self.thread_pool_executor,
@@ -53,4 +53,4 @@ class ChatVertexAIAgent(RespondAgent[ChatVertexAIAgentConfig]):
         )
 
         logger.debug(f"LLM response: {text}")
-        return text, False
+        return text

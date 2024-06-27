@@ -146,8 +146,8 @@ class SpellerAgent(RespondAgent[SpellerAgentConfig]):
         human_input: str,
         conversation_id: str,
         is_interrupt: bool = False,
-    ) -> Tuple[Optional[str], bool]:
-        return "".join(c + " " for c in human_input), False
+    ) -> Optional[str]:
+        return "".join(c + " " for c in human_input)
 
 
 class SpellerAgentFactory(AbstractAgentFactory):
@@ -182,10 +182,10 @@ class SpellerAgent(BaseAgent):
         human_input: str,
         conversation_id: str,
         is_interrupt: bool = False,
-    ) -> Tuple[Optional[str], bool]:
+    ) -> Optional[str]:
         call_config = self.config_manager.get_config(conversation_id)
         if call_config is not None:
             from_phone = call_config.twilio_from
             to_phone = call_config.twilio_to
-        return "".join(c + " " for c in human_input), False
+        return "".join(c + " " for c in human_input)
 ```

@@ -56,7 +56,7 @@ class GoogleSynthesizer(BaseSynthesizer[GoogleSynthesizerConfig]):
         )
 
     # TODO: make this nonblocking, see speech.TextToSpeechAsyncClient
-    async def create_speech(
+    async def create_speech_with_cache(
         self,
         message: BaseMessage,
         chunk_size: int,

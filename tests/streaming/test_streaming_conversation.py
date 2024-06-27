@@ -1,5 +1,6 @@
 import asyncio
-from typing import List
+import threading
+from typing import AsyncGenerator, List, Optional
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,7 +17,8 @@ from vocode.streaming.models.agent import InterruptSensitivity
 from vocode.streaming.models.events import Sender
 from vocode.streaming.models.transcriber import Transcription
 from vocode.streaming.models.transcript import ActionStart, Message, Transcript
-from vocode.streaming.utils.worker import AsyncWorker
+from vocode.streaming.synthesizer.base_synthesizer import SynthesisResult
+from vocode.streaming.utils.worker import QueueConsumer
 
 
 class ShouldIgnoreUtteranceTestCase(BaseModel):
@@ -25,9 +27,9 @@ class ShouldIgnoreUtteranceTestCase(BaseModel):
     expected: bool
 
 
-async def _consume_worker_output(worker: AsyncWorker, timeout: float = 0.1):
+async def _get_from_consumer_queue_if_exists(queue_consumer: QueueConsumer, timeout: float = 0.1):
     try:
-        return await asyncio.wait_for(worker.output_queue.get(), timeout=timeout)
+        return await asyncio.wait_for(queue_consumer.input_queue.get(), timeout=timeout)
     except asyncio.TimeoutError:
         return None
 
@@ -172,8 +174,6 @@ def test_should_ignore_utterance(
 
     conversation = mocker.MagicMock()
     transcriptions_worker = StreamingConversation.TranscriptionsWorker(
-        input_queue=mocker.MagicMock(),
-        output_queue=mocker.MagicMock(),
         conversation=conversation,
         interruptible_event_factory=mocker.MagicMock(),
     )
@@ -251,7 +251,9 @@ async def test_transcriptions_worker_ignores_utterances_before_initial_message(
             is_final=True,
         ),
     )
-    assert await _consume_worker_output(streaming_conversation.transcriptions_worker) is None
+    transcriptions_worker_consumer = QueueConsumer()
+    streaming_conversation.transcriptions_worker.consumer = transcriptions_worker_consumer
+    assert await _get_from_consumer_queue_if_exists(transcriptions_worker_consumer) is None
     assert not streaming_conversation.broadcast_interrupt.called
 
     streaming_conversation.transcript.add_bot_message(
@@ -267,8 +269,8 @@ async def test_transcriptions_worker_ignores_utterances_before_initial_message(
         ),
     )
 
-    transcription_agent_input = await _consume_worker_output(
-        streaming_conversation.transcriptions_worker
+    transcription_agent_input = await _get_from_consumer_queue_if_exists(
+        transcriptions_worker_consumer
     )
     assert transcription_agent_input.payload.transcription.message == "hi, who is this?"
     assert streaming_conversation.broadcast_interrupt.called
@@ -308,7 +310,10 @@ async def test_transcriptions_worker_ignores_associated_ignored_utterance(
             is_final=False,
         ),
     )
-    assert await _consume_worker_output(streaming_conversation.transcriptions_worker) is None
+    transcriptions_worker_consumer = QueueConsumer()
+    streaming_conversation.transcriptions_worker.consumer = transcriptions_worker_consumer
+
+    assert await _get_from_consumer_queue_if_exists(transcriptions_worker_consumer) is None
     assert not streaming_conversation.broadcast_interrupt.called  # ignored for length of response
 
     streaming_conversation.transcript.event_logs[-1].text = (
@@ -323,7 +328,7 @@ async def test_transcriptions_worker_ignores_associated_ignored_utterance(
         ),
     )
 
-    assert await _consume_worker_output(streaming_conversation.transcriptions_worker) is None
+    assert await _get_from_consumer_queue_if_exists(transcriptions_worker_consumer) is None
     assert not streaming_conversation.broadcast_interrupt.called  # ignored for length of response
 
     streaming_conversation.transcriptions_worker.consume_nonblocking(
@@ -334,8 +339,8 @@ async def test_transcriptions_worker_ignores_associated_ignored_utterance(
         ),
     )
 
-    transcription_agent_input = await _consume_worker_output(
-        streaming_conversation.transcriptions_worker
+    transcription_agent_input = await _get_from_consumer_queue_if_exists(
+        transcriptions_worker_consumer
     )
     assert (
         transcription_agent_input.payload.transcription.message == "I have not yet gotten a chance."
@@ -375,7 +380,10 @@ async def test_transcriptions_worker_interrupts_on_interim_transcripts(
         ),
     )
 
-    assert await _consume_worker_output(streaming_conversation.transcriptions_worker) is None
+    transcriptions_worker_consumer = QueueConsumer()
+    streaming_conversation.transcriptions_worker.consumer = transcriptions_worker_consumer
+
+    assert await _get_from_consumer_queue_if_exists(transcriptions_worker_consumer) is None
     assert streaming_conversation.broadcast_interrupt.called
 
     streaming_conversation.transcriptions_worker.consume_nonblocking(
@@ -386,8 +394,8 @@ async def test_transcriptions_worker_interrupts_on_interim_transcripts(
         ),
     )
 
-    transcription_agent_input = await _consume_worker_output(
-        streaming_conversation.transcriptions_worker
+    transcription_agent_input = await _get_from_consumer_queue_if_exists(
+        transcriptions_worker_consumer
     )
     assert (
         transcription_agent_input.payload.transcription.message
@@ -419,7 +427,10 @@ async def test_transcriptions_worker_interrupts_immediately_before_bot_has_begun
             is_final=False,
         ),
     )
-    assert await _consume_worker_output(streaming_conversation.transcriptions_worker) is None
+    transcriptions_worker_consumer = QueueConsumer()
+    streaming_conversation.transcriptions_worker.consumer = transcriptions_worker_consumer
+
+    assert await _get_from_consumer_queue_if_exists(transcriptions_worker_consumer) is None
     assert streaming_conversation.broadcast_interrupt.called
 
     streaming_conversation.transcriptions_worker.consume_nonblocking(
@@ -429,8 +440,8 @@ async def test_transcriptions_worker_interrupts_immediately_before_bot_has_begun
             is_final=True,
         ),
     )
-    transcription_agent_input = await _consume_worker_output(
-        streaming_conversation.transcriptions_worker
+    transcription_agent_input = await _get_from_consumer_queue_if_exists(
+        transcriptions_worker_consumer
     )
     assert transcription_agent_input.payload.transcription.message == "Sorry, what?"
     assert streaming_conversation.broadcast_interrupt.called
@@ -447,7 +458,128 @@ async def test_transcriptions_worker_interrupts_immediately_before_bot_has_begun
         ),
     )
 
-    assert await _consume_worker_output(streaming_conversation.transcriptions_worker) is None
+    assert await _get_from_consumer_queue_if_exists(transcriptions_worker_consumer) is None
     assert streaming_conversation.broadcast_interrupt.called
 
     streaming_conversation.transcriptions_worker.terminate()
+
+
+def _create_dummy_synthesis_result(
+    message: str = "Hi there",
+    num_audio_chunks: int = 3,
+    chunk_generator_override: Optional[AsyncGenerator[SynthesisResult.ChunkResult, None]] = None,
+):
+    async def chunk_generator():
+        for i in range(num_audio_chunks):
+            yield SynthesisResult.ChunkResult(chunk=b"", is_last_chunk=i == num_audio_chunks - 1)
+
+    def get_message_up_to(seconds: Optional[float]):
+        if seconds is None:
+            return message
+        return message[: len(message) // 2]
+
+    return SynthesisResult(
+        chunk_generator=chunk_generator_override or chunk_generator(),
+        get_message_up_to=get_message_up_to,
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_speech_to_output_uninterrupted(
+    mocker: MockerFixture,
+):
+    streaming_conversation = await _mock_streaming_conversation_constructor(mocker)
+    synthesis_result = _create_dummy_synthesis_result()
+    stop_event = threading.Event()
+    transcript_message = Message(
+        text="",
+        sender=Sender.BOT,
+    )
+
+    streaming_conversation.output_device.start()
+    message_sent, cut_off = await streaming_conversation.send_speech_to_output(
+        message="Hi there",
+        synthesis_result=synthesis_result,
+        stop_event=stop_event,
+        seconds_per_chunk=0.1,
+        transcript_message=transcript_message,
+    )
+    streaming_conversation.output_device.flush()
+
+    assert message_sent == "Hi there"
+    assert not cut_off
+    assert transcript_message.text == "Hi there"
+    assert transcript_message.is_final
+
+
+@pytest.mark.asyncio
+async def test_send_speech_to_output_interrupted_before_all_chunks_sent(
+    mocker: MockerFixture,
+):
+    streaming_conversation = await _mock_streaming_conversation_constructor(mocker)
+    synthesis_result = _create_dummy_synthesis_result()
+    stop_event = threading.Event()
+    transcript_message = Message(
+        text="",
+        sender=Sender.BOT,
+    )
+    stop_event.set()
+
+    streaming_conversation.output_device.start()
+    message_sent, cut_off = await streaming_conversation.send_speech_to_output(
+        message="Hi there",
+        synthesis_result=synthesis_result,
+        stop_event=stop_event,
+        seconds_per_chunk=0.1,
+        transcript_message=transcript_message,
+    )
+    streaming_conversation.output_device.flush()
+
+    assert message_sent != "Hi there"
+    assert cut_off
+    assert transcript_message.text != "Hi there"
+    assert not transcript_message.is_final
+
+
+@pytest.mark.asyncio
+async def test_send_speech_to_output_interrupted_during_playback(
+    mocker: MockerFixture,
+):
+    finished_sending_chunks = asyncio.Event()
+
+    async def chunk_generator():
+        yield SynthesisResult.ChunkResult(chunk=b"", is_last_chunk=False)
+        yield SynthesisResult.ChunkResult(chunk=b"", is_last_chunk=False)
+        yield SynthesisResult.ChunkResult(chunk=b"", is_last_chunk=True)
+        finished_sending_chunks.set()
+
+    streaming_conversation = await _mock_streaming_conversation_constructor(mocker)
+    synthesis_result = _create_dummy_synthesis_result(chunk_generator_override=chunk_generator())
+    stop_event = threading.Event()
+    transcript_message = Message(
+        text="",
+        sender=Sender.BOT,
+    )
+
+    streaming_conversation.output_device.wait_for_interrupt = True
+
+    streaming_conversation.output_device.start()
+    send_speech_to_output_task = asyncio.create_task(
+        streaming_conversation.send_speech_to_output(
+            message="Hi there",
+            synthesis_result=synthesis_result,
+            stop_event=stop_event,
+            seconds_per_chunk=0.1,
+            transcript_message=transcript_message,
+        )
+    )
+    await finished_sending_chunks.wait()
+    stop_event.set()
+    streaming_conversation.output_device.interrupt_event.set()
+    message_sent, cut_off = await send_speech_to_output_task
+    streaming_conversation.output_device.terminate()
+
+    assert message_sent != "Hi there"
+    assert cut_off
+    assert transcript_message.text != "Hi there"
+    assert not transcript_message.is_final

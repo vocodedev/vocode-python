@@ -29,7 +29,7 @@ class RESTfulUserImplementedAgent(RespondAgent[RESTfulUserImplementedAgentConfig
         human_input,
         conversation_id: str,
         is_interrupt: bool = False,
-    ) -> Tuple[Optional[str], bool]:
+    ) -> Optional[str]:
         config = self.agent_config.respond
         try:
             # TODO: cache session
@@ -46,12 +46,11 @@ class RESTfulUserImplementedAgent(RespondAgent[RESTfulUserImplementedAgentConfig
                     assert response.status == 200
                     output: RESTfulAgentOutput = RESTfulAgentOutput.parse_obj(await response.json())
                     output_response = None
-                    should_stop = False
                     if output.type == RESTfulAgentOutputType.TEXT:
                         output_response = cast(RESTfulAgentText, output).response
                     elif output.type == RESTfulAgentOutputType.END:
-                        should_stop = True
-                    return output_response, should_stop
+                        await self.conversation_state_manager.terminate_conversation()
+                    return output_response
         except Exception as e:
             logger.error(f"Error in response from RESTful agent: {e}")
-            return None, True
+            return None

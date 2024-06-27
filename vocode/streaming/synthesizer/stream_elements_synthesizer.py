@@ -18,7 +18,7 @@ class StreamElementsSynthesizer(BaseSynthesizer[StreamElementsSynthesizerConfig]
         super().__init__(synthesizer_config)
         self.voice = synthesizer_config.voice
 
-    async def create_speech(
+    async def create_speech_with_cache(
         self,
         message: BaseMessage,
         chunk_size: int,

@@ -80,7 +80,7 @@ class GoogleTranscriber(BaseThreadAsyncTranscriber[GoogleTranscriberConfig]):
         message = top_choice.transcript
         confidence = top_choice.confidence
 
-        self.output_janus_queue.sync_q.put_nowait(
+        self.produce_nonblocking(
             Transcription(message=message, confidence=confidence, is_final=result.is_final)
         )
 

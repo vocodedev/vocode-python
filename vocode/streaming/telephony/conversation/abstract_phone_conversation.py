@@ -49,7 +49,6 @@ class AbstractPhoneConversation(StreamingConversation[TelephonyOutputDeviceType]
         conversation_id: Optional[str] = None,
         events_manager: Optional[EventsManager] = None,
         speed_coefficient: float = 1.0,
-        per_chunk_allowance_seconds: float = 0.01,
     ):
         conversation_id = conversation_id or create_conversation_id()
         ctx_conversation_id.set(conversation_id)
@@ -64,15 +63,8 @@ class AbstractPhoneConversation(StreamingConversation[TelephonyOutputDeviceType]
             agent_factory.create_agent(agent_config),
             synthesizer_factory.create_synthesizer(synthesizer_config),
             conversation_id=conversation_id,
-            per_chunk_allowance_seconds=per_chunk_allowance_seconds,
             events_manager=events_manager,
             speed_coefficient=speed_coefficient,
-        )
-        self.transcriptions_worker = self.TranscriptionsWorker(
-            input_queue=self.transcriber.output_queue,
-            output_queue=self.agent.get_input_queue(),
-            conversation=self,
-            interruptible_event_factory=self.interruptible_event_factory,
         )
         self.config_manager = config_manager
 

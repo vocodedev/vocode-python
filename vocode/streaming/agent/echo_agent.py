@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, Tuple
+from typing import AsyncGenerator, Optional, Tuple
 
 from vocode.streaming.agent.base_agent import GeneratedResponse, RespondAgent
 from vocode.streaming.models.agent import EchoAgentConfig
@@ -11,8 +11,8 @@ class EchoAgent(RespondAgent[EchoAgentConfig]):
         human_input,
         conversation_id: str,
         is_interrupt: bool = False,
-    ) -> Tuple[str, bool]:
-        return human_input, False
+    ) -> Optional[str]:
+        return human_input
 
     async def generate_response(
         self,

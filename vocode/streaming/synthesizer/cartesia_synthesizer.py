@@ -60,7 +60,7 @@ class CartesiaSynthesizer(BaseSynthesizer[CartesiaSynthesizerConfig]):
         self.client = self.cartesia_tts(api_key=self.api_key)
         self.voice_embedding = self.client.get_voice_embedding(voice_id=self.voice_id)
 
-    async def create_speech_uncached(
+    async def create_speech(
         self,
         message: BaseMessage,
         chunk_size: int,
