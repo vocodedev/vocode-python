@@ -19,31 +19,39 @@ class CartesiaSynthesizer(BaseSynthesizer[CartesiaSynthesizerConfig]):
 
         # Lazy import the cartesia module
         try:
-            from cartesia.tts import AsyncCartesiaTTS
+            from cartesia import AsyncCartesia
         except ImportError as e:
             raise ImportError(
                 f"Missing required dependancies for CartesiaSynthesizer"
             ) from e
         
-        self.cartesia_tts = AsyncCartesiaTTS
-        
         self.api_key = synthesizer_config.api_key or getenv("CARTESIA_API_KEY")
         if not self.api_key:
             raise ValueError("Missing Cartesia API key")
         
+        self.cartesia_tts = AsyncCartesia
 
         if synthesizer_config.audio_encoding == AudioEncoding.LINEAR16:
             self.channel_width = 2
             match synthesizer_config.sampling_rate:
                 case SamplingRate.RATE_44100:
-                    self.sampling_rate = 44100
-                    self.output_format = "pcm_44100"
+                    self.output_format = {
+                        "sample_rate": 44100,
+                        "encoding": "pcm_s16le",
+                        "container": "raw",
+                    }
                 case SamplingRate.RATE_22050:
-                    self.sampling_rate = 22050
-                    self.output_format = "pcm_22050"
+                    self.output_format = {
+                        "sample_rate": 22050,
+                        "encoding": "pcm_s16le",
+                        "container": "raw",
+                    }
                 case SamplingRate.RATE_16000:
-                    self.sampling_rate = 16000
-                    self.output_format = "pcm_16000"
+                    self.output_format = {
+                        "sample_rate": 16000,
+                        "encoding": "pcm_s16le",
+                        "container": "raw",
+                    }
                 case _:
                     raise ValueError(
                         f"Unsupported PCM sampling rate {synthesizer_config.sampling_rate}"
@@ -52,20 +60,24 @@ class CartesiaSynthesizer(BaseSynthesizer[CartesiaSynthesizerConfig]):
             # Cartesia has issues with MuLaw/8000. Use pcm/16000 and
             # create_synthesis_result_from_wav will handle the conversion to mulaw/8000
             self.channel_width = 2
-            self.output_format = "pcm_16000"
-            self.sampling_rate = 16000
+            self.output_format = {
+                "sample_rate": 16000,
+                "encoding": "pcm_s16le",
+                "container": "raw",
+            }
         else:
             raise ValueError(
                 f"Unsupported audio encoding {synthesizer_config.audio_encoding}"
             )
 
+        if not isinstance(self.output_format["sample_rate"], int):
+            raise ValueError(f"Invalid type for sample_rate")
+        self.sampling_rate = self.output_format["sample_rate"]
         self.num_channels = 1
         self.model_id = synthesizer_config.model_id
         self.voice_id = synthesizer_config.voice_id
         self.client = self.cartesia_tts(api_key=self.api_key)
-        self.voice_embedding = self.client.get_voice_embedding(voice_id=self.voice_id)
         
-
     async def create_speech_uncached(
         self,
         message: BaseMessage,
@@ -73,12 +85,11 @@ class CartesiaSynthesizer(BaseSynthesizer[CartesiaSynthesizerConfig]):
         is_first_text_chunk: bool = False,
         is_sole_text_chunk: bool = False,
     ) -> SynthesisResult:
-        generator = await self.client.generate(
-            transcript=message.text,
-            voice=self.voice_embedding,
-            stream=True,
+        generator = await self.client.tts.sse(
             model_id=self.model_id,
-            data_rtype='bytes',
+            transcript=message.text,
+            voice_id=self.voice_id,
+            stream=True,
             output_format=self.output_format
         )
 
@@ -86,7 +97,7 @@ class CartesiaSynthesizer(BaseSynthesizer[CartesiaSynthesizerConfig]):
         with wave.open(audio_file, 'wb') as wav_file:
             wav_file.setnchannels(self.num_channels)
             wav_file.setsampwidth(self.channel_width)
-            wav_file.setframerate(self.sampling_rate)
+            wav_file.setframerate(float(self.sampling_rate))
             async for chunk in generator:
                 wav_file.writeframes(chunk['audio'])
         audio_file.seek(0)

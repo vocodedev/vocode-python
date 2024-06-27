@@ -228,7 +228,7 @@ class PollySynthesizerConfig(SynthesizerConfig, type=SynthesizerType.POLLY.value
     sampling_rate: int = DEFAULT_POLLY_SAMPLING_RATE
 
 
-DEFAULT_CARTESIA_MODEL_ID = "upbeat-moon"
+DEFAULT_CARTESIA_MODEL_ID = "sonic-english"
 DEFAULT_CARTESIA_VOICE_ID = "5345cf08-6f37-424d-a5d9-8ae1101b9377"
 
 
