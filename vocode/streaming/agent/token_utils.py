@@ -90,7 +90,7 @@ def get_tokenizer_info(model: str) -> Optional[TokenizerInfo]:
     try:
         encoding = tiktoken.encoding_for_model(model)
     except KeyError:
-        logger.warning("Warning: model not found. Using cl100k_base encoding.")
+        logger.warning(f"Warning: model not found. Using cl100k_base encoding for {model}.")
         encoding = tiktoken.get_encoding("cl100k_base")
     if model in {
         "gpt-3.5-turbo-0613",
@@ -114,6 +114,14 @@ def get_tokenizer_info(model: str) -> Optional[TokenizerInfo]:
     elif "gpt-4" in model:
         logger.debug(
             "Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613."
+        )
+        tokens_per_message = 3
+        tokens_per_name = 1
+    elif "llama" in model.lower():
+        logger.warning(
+            f"Warning: you are using a llama model with an OpenAI compatible endpoint. \
+            Llama models are not supported natively support for token counting in tiktoken. \
+            Using cl100k_base encoding for {model} as an APPROXIMATION of token usage."
         )
         tokens_per_message = 3
         tokens_per_name = 1

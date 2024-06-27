@@ -177,3 +177,16 @@ async def test_action_response_agent_input(mocker: MockerFixture):
     # TODO: assert that the canned response is optionally sent if the action is not quiet
     # and that it goes through the normal flow when the action is not quiet
     pass
+
+@pytest.fixture
+def agent_config():
+    return ChatGPTAgentConfig(
+        openai_api_key="test_key",
+        model_name="llama3-8b-8192",
+        base_url_override="https://api.groq.com/openai/v1",
+        prompt_preamble="Test prompt",
+    )
+
+def test_chat_gpt_agent_base_url(agent_config):
+    agent = ChatGPTAgent(agent_config)
+    assert agent.openai_client.base_url == "https://api.groq.com/openai/v1"
