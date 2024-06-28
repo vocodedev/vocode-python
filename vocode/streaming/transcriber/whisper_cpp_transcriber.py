@@ -78,5 +78,5 @@ class WhisperCPPTranscriber(BaseThreadAsyncTranscriber[WhisperCPPTranscriberConf
                 if is_final:
                     message_buffer = ""
 
-    def terminate(self):
+    async def terminate(self):
         pass

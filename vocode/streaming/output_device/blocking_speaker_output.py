@@ -38,9 +38,9 @@ class _PlaybackWorker(ThreadAsyncWorker[bytes]):
             except queue.Empty:
                 continue
 
-    def terminate(self):
+    async def terminate(self):
         self._ended = True
-        super().terminate()
+        await super().terminate()
         self.stream.close()
 
 
@@ -65,9 +65,9 @@ class BlockingSpeakerOutput(RateLimitInterruptionsOutputDevice):
         self.playback_worker.start()
         return super().start()
 
-    def terminate(self):
-        self.playback_worker.terminate()
-        super().terminate()
+    async def terminate(self):
+        await self.playback_worker.terminate()
+        await super().terminate()
 
     @classmethod
     def from_default_device(

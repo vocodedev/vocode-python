@@ -57,9 +57,9 @@ class GoogleTranscriber(BaseThreadAsyncTranscriber[GoogleTranscriberConfig]):
         responses = self.client.streaming_recognize(self.google_streaming_config, requests)
         self.process_responses_loop(responses)
 
-    def terminate(self):
+    async def terminate(self):
         self._ended = True
-        super().terminate()
+        await super().terminate()
 
     def process_responses_loop(self, responses):
         for response in responses:

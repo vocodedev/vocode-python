@@ -138,10 +138,10 @@ class WebSocketUserImplementedAgent(BaseAgent[WebSocketUserImplementedAgentConfi
 
             await asyncio.gather(sender(ws), receiver(ws))
 
-    def terminate(self):
+    async def terminate(self):
         self.agent_responses_consumer.consume_nonblocking(
             self.interruptible_event_factory.create_interruptible_agent_response_event(
                 AgentResponseStop()
             )
         )
-        super().terminate()
+        await super().terminate()

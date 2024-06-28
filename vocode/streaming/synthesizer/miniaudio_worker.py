@@ -96,6 +96,6 @@ class MiniaudioWorker(ThreadAsyncWorker[Union[bytes, None]]):
             current_wav_output_buffer = current_wav_output_buffer[output_buffer_idx:]
             current_wav_buffer.extend(new_bytes)
 
-    def terminate(self):
+    async def terminate(self):
         self._ended = True
-        super().terminate()
+        await super().terminate()
