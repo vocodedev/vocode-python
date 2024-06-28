@@ -6,12 +6,12 @@ import sounddevice as sd
 
 from vocode.streaming.models.audio import AudioEncoding
 
-from .base_output_device import BaseOutputDevice
+from .abstract_output_device import AbstractOutputDevice
 
 raise DeprecationWarning("Use BlockingSpeakerOutput instead")
 
 
-class SpeakerOutput(BaseOutputDevice):
+class SpeakerOutput(AbstractOutputDevice):
     DEFAULT_SAMPLING_RATE = 44100
 
     def __init__(

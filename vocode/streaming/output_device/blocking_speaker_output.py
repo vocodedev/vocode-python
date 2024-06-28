@@ -6,26 +6,21 @@ import numpy as np
 import sounddevice as sd
 
 from vocode.streaming.models.audio import AudioEncoding
-from vocode.streaming.output_device.base_output_device import BaseOutputDevice
+from vocode.streaming.output_device.rate_limit_interruptions_output_device import (
+    RateLimitInterruptionsOutputDevice,
+)
 from vocode.streaming.utils.worker import ThreadAsyncWorker
 
+DEFAULT_SAMPLING_RATE = 44100
 
-class BlockingSpeakerOutput(BaseOutputDevice, ThreadAsyncWorker):
-    DEFAULT_SAMPLING_RATE = 44100
 
-    def __init__(
-        self,
-        device_info: dict,
-        sampling_rate: Optional[int] = None,
-        audio_encoding: AudioEncoding = AudioEncoding.LINEAR16,
-    ):
+class _PlaybackWorker(ThreadAsyncWorker[bytes]):
+
+    def __init__(self, *, device_info: dict, sampling_rate: int):
+        self.sampling_rate = sampling_rate
         self.device_info = device_info
-        sampling_rate = sampling_rate or int(
-            self.device_info.get("default_samplerate", self.DEFAULT_SAMPLING_RATE)
-        )
         self.input_queue: asyncio.Queue[bytes] = asyncio.Queue()
-        BaseOutputDevice.__init__(self, sampling_rate, audio_encoding)
-        ThreadAsyncWorker.__init__(self, self.input_queue)
+        super().__init__(self.input_queue)
         self.stream = sd.OutputStream(
             channels=1,
             samplerate=self.sampling_rate,
@@ -36,9 +31,6 @@ class BlockingSpeakerOutput(BaseOutputDevice, ThreadAsyncWorker):
         self.input_queue.put_nowait(self.sampling_rate * b"\x00")
         self.stream.start()
 
-    def start(self):
-        ThreadAsyncWorker.start(self)
-
     def _run_loop(self):
         while not self._ended:
             try:
@@ -47,13 +39,36 @@ class BlockingSpeakerOutput(BaseOutputDevice, ThreadAsyncWorker):
             except queue.Empty:
                 continue
 
-    def consume_nonblocking(self, chunk):
-        ThreadAsyncWorker.consume_nonblocking(self, chunk)
-
     def terminate(self):
         self._ended = True
-        ThreadAsyncWorker.terminate(self)
+        super().terminate()
         self.stream.close()
+
+
+class BlockingSpeakerOutput(RateLimitInterruptionsOutputDevice):
+
+    def __init__(
+        self,
+        device_info: dict,
+        sampling_rate: Optional[int] = None,
+        audio_encoding: AudioEncoding = AudioEncoding.LINEAR16,
+    ):
+        sampling_rate = sampling_rate or int(
+            device_info.get("default_samplerate", DEFAULT_SAMPLING_RATE)
+        )
+        super().__init__(sampling_rate=sampling_rate, audio_encoding=audio_encoding)
+        self.playback_worker = _PlaybackWorker(device_info=device_info, sampling_rate=sampling_rate)
+
+    async def play(self, chunk):
+        self.playback_worker.consume_nonblocking(chunk)
+
+    def start(self) -> asyncio.Task:
+        self.playback_worker.start()
+        return super().start()
+
+    def terminate(self):
+        self.playback_worker.terminate()
+        super().terminate()
 
     @classmethod
     def from_default_device(

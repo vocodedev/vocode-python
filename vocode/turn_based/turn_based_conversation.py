@@ -2,7 +2,7 @@ from loguru import logger
 
 from vocode.turn_based.agent.base_agent import BaseAgent
 from vocode.turn_based.input_device.base_input_device import BaseInputDevice
-from vocode.turn_based.output_device.base_output_device import BaseOutputDevice
+from vocode.turn_based.output_device.abstract_output_device import AbstractOutputDevice
 from vocode.turn_based.synthesizer.base_synthesizer import BaseSynthesizer
 from vocode.turn_based.transcriber.base_transcriber import BaseTranscriber
 
@@ -14,7 +14,7 @@ class TurnBasedConversation:
         transcriber: BaseTranscriber,
         agent: BaseAgent,
         synthesizer: BaseSynthesizer,
-        output_device: BaseOutputDevice,
+        output_device: AbstractOutputDevice,
     ):
         self.input_device = input_device
         self.transcriber = transcriber

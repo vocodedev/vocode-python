@@ -1,7 +1,7 @@
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import Any, Optional
 
 import boto3
 
@@ -63,9 +63,11 @@ class PollySynthesizer(BaseSynthesizer[PollySynthesizerConfig]):
     def get_message_up_to(
         self,
         message: str,
-        seconds: float,
+        seconds: Optional[float],
         word_events,
     ) -> str:
+        if seconds is None:
+            return message
         for event in word_events:
             # time field is in ms
             if event["time"] > seconds * 1000:

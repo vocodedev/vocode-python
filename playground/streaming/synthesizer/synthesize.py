@@ -2,11 +2,13 @@ import time
 
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.synthesizer import AzureSynthesizerConfig
-from vocode.streaming.output_device.base_output_device import BaseOutputDevice
+from vocode.streaming.output_device.abstract_output_device import AbstractOutputDevice
+from vocode.streaming.output_device.audio_chunk import AudioChunk
 from vocode.streaming.output_device.blocking_speaker_output import BlockingSpeakerOutput
 from vocode.streaming.synthesizer.azure_synthesizer import AzureSynthesizer
 from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer
 from vocode.streaming.utils import get_chunk_size_per_second
+from vocode.streaming.utils.worker import InterruptibleEvent
 
 if __name__ == "__main__":
     import asyncio
@@ -19,7 +21,7 @@ if __name__ == "__main__":
 
     async def speak(
         synthesizer: BaseSynthesizer,
-        output_device: BaseOutputDevice,
+        output_device: AbstractOutputDevice,
         message: BaseMessage,
     ):
         message_sent = message.text
@@ -38,7 +40,9 @@ if __name__ == "__main__":
             try:
                 start_time = time.time()
                 speech_length_seconds = seconds_per_chunk * (len(chunk_result.chunk) / chunk_size)
-                output_device.consume_nonblocking(chunk_result.chunk)
+                output_device.consume_nonblocking(
+                    InterruptibleEvent(payload=AudioChunk(data=chunk_result.chunk))
+                )
                 end_time = time.time()
                 await asyncio.sleep(
                     max(

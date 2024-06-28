@@ -1,3 +1,5 @@
+import asyncio
+import time
 from typing import Optional
 
 from pytest_mock import MockerFixture
@@ -8,7 +10,8 @@ from vocode.streaming.models.audio import AudioEncoding
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.synthesizer import PlayHtSynthesizerConfig, SynthesizerConfig
 from vocode.streaming.models.transcriber import DeepgramTranscriberConfig, TranscriberConfig
-from vocode.streaming.output_device.base_output_device import BaseOutputDevice
+from vocode.streaming.output_device.abstract_output_device import AbstractOutputDevice
+from vocode.streaming.output_device.audio_chunk import ChunkState
 from vocode.streaming.streaming_conversation import StreamingConversation
 from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer
 from vocode.streaming.telephony.constants import DEFAULT_CHUNK_SIZE, DEFAULT_SAMPLING_RATE
@@ -36,8 +39,53 @@ DEFAULT_CHAT_GPT_AGENT_CONFIG = ChatGPTAgentConfig(
 )
 
 
-class DummyOutputDevice(BaseOutputDevice):
-    def consume_nonblocking(self, chunk: bytes):
+class DummyOutputDevice(AbstractOutputDevice):
+
+    def __init__(
+        self,
+        sampling_rate: int,
+        audio_encoding: AudioEncoding,
+        wait_for_interrupt: bool = False,
+        chunks_before_interrupt: int = 1,
+    ):
+        super().__init__(sampling_rate, audio_encoding)
+        self.wait_for_interrupt = wait_for_interrupt
+        self.chunks_before_interrupt = chunks_before_interrupt
+        self.interrupt_event = asyncio.Event()
+
+    async def process(self, item):
+        self.interruptible_event = item
+        audio_chunk = item.payload
+
+        if item.is_interrupted():
+            audio_chunk.on_interrupt()
+            audio_chunk.state = ChunkState.INTERRUPTED
+        else:
+            audio_chunk.on_play()
+            audio_chunk.state = ChunkState.PLAYED
+            self.interruptible_event.is_interruptible = False
+
+    async def _run_loop(self):
+        chunk_counter = 0
+        while True:
+            try:
+                item = await self.input_queue.get()
+            except asyncio.CancelledError:
+                return
+            if self.wait_for_interrupt and chunk_counter == self.chunks_before_interrupt:
+                await self.interrupt_event.wait()
+            await self.process(item)
+            chunk_counter += 1
+
+    def flush(self):
+        while True:
+            try:
+                item = self.input_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            self.process(item)
+
+    def interrupt(self):
         pass
 
 

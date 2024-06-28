@@ -329,11 +329,11 @@ class ElevenLabsWSSynthesizer(
             self.establish_websocket_listeners(chunk_size)
         )
 
-    def get_current_message_so_far(self, seconds: float) -> str:
+    def get_current_message_so_far(self, seconds: Optional[float]) -> str:
         seconds_idx = 0.0
         buffer = ""
         for utterance, duration in self.current_turn_utterances_by_chunk:
-            if seconds_idx > seconds:
+            if seconds is not None and seconds_idx > seconds:
                 return buffer
             buffer += utterance
             seconds_idx += duration

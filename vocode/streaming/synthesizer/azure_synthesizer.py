@@ -218,9 +218,11 @@ class AzureSynthesizer(BaseSynthesizer[AzureSynthesizerConfig]):
         self,
         message: str,
         ssml: str,
-        seconds: float,
+        seconds: Optional[float],
         word_boundary_event_pool: WordBoundaryEventPool,
     ) -> str:
+        if seconds is None:
+            return message
         events = word_boundary_event_pool.get_events_sorted()
         for event in events:
             if event["audio_offset"] > seconds:

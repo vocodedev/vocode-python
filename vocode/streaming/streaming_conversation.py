@@ -9,7 +9,6 @@ import time
 import typing
 from typing import (
     Any,
-    AsyncGenerator,
     Awaitable,
     Callable,
     Generic,
@@ -39,7 +38,6 @@ from vocode.streaming.agent.chat_gpt_agent import ChatGPTAgent
 from vocode.streaming.constants import (
     ALLOWED_IDLE_TIME,
     CHECK_HUMAN_PRESENT_MESSAGE_CHOICES,
-    PER_CHUNK_ALLOWANCE_SECONDS,
     TEXT_TO_SPEECH_CHUNK_SIZE_SECONDS,
 )
 from vocode.streaming.models.actions import EndOfTurn
@@ -48,7 +46,8 @@ from vocode.streaming.models.events import Sender
 from vocode.streaming.models.message import BaseMessage, BotBackchannel, LLMToken, SilenceMessage
 from vocode.streaming.models.transcriber import TranscriberConfig, Transcription
 from vocode.streaming.models.transcript import Message, Transcript, TranscriptCompleteEvent
-from vocode.streaming.output_device.base_output_device import BaseOutputDevice
+from vocode.streaming.output_device.abstract_output_device import AbstractOutputDevice
+from vocode.streaming.output_device.audio_chunk import AudioChunk, ChunkState
 from vocode.streaming.synthesizer.base_synthesizer import (
     BaseSynthesizer,
     FillerAudio,
@@ -57,7 +56,11 @@ from vocode.streaming.synthesizer.base_synthesizer import (
 from vocode.streaming.synthesizer.input_streaming_synthesizer import InputStreamingSynthesizer
 from vocode.streaming.transcriber.base_transcriber import BaseTranscriber
 from vocode.streaming.transcriber.deepgram_transcriber import DeepgramTranscriber
-from vocode.streaming.utils import create_conversation_id, get_chunk_size_per_second
+from vocode.streaming.utils import (
+    create_conversation_id,
+    enumerate_async_iter,
+    get_chunk_size_per_second,
+)
 from vocode.streaming.utils.create_task import asyncio_create_task_with_done_error_log
 from vocode.streaming.utils.events_manager import EventsManager
 from vocode.streaming.utils.speed_manager import SpeedManager
@@ -102,7 +105,7 @@ BACKCHANNEL_PATTERNS = [
 LOW_INTERRUPT_SENSITIVITY_BACKCHANNEL_UTTERANCE_LENGTH_THRESHOLD = 3
 
 
-OutputDeviceType = TypeVar("OutputDeviceType", bound=BaseOutputDevice)
+OutputDeviceType = TypeVar("OutputDeviceType", bound=AbstractOutputDevice)
 
 
 class StreamingConversation(Generic[OutputDeviceType]):
@@ -136,7 +139,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
             self.conversation.interruptible_events.put_nowait(interruptible_event)
             return interruptible_event
 
-    class TranscriptionsWorker(AsyncQueueWorker):
+    class TranscriptionsWorker(AsyncQueueWorker[Transcription]):
         """Processes all transcriptions: sends an interrupt if needed
         and sends final transcriptions to the output queue"""
 
@@ -267,7 +270,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
                 )
             if not self.conversation.is_human_speaking:
                 self.conversation.current_transcription_is_interrupt = (
-                    self.conversation.broadcast_interrupt()
+                    await self.conversation.broadcast_interrupt()
                 )
                 self.has_associated_unignored_utterance = not transcription.is_final
                 if self.conversation.current_transcription_is_interrupt:
@@ -590,7 +593,6 @@ class StreamingConversation(Generic[OutputDeviceType]):
         synthesizer: BaseSynthesizer,
         speed_coefficient: float = 1.0,
         conversation_id: Optional[str] = None,
-        per_chunk_allowance_seconds: float = PER_CHUNK_ALLOWANCE_SECONDS,
         events_manager: Optional[EventsManager] = None,
     ):
         self.id = conversation_id or create_conversation_id()
@@ -655,7 +657,6 @@ class StreamingConversation(Generic[OutputDeviceType]):
 
         self.events_manager = events_manager or EventsManager()
         self.events_task: Optional[asyncio.Task] = None
-        self.per_chunk_allowance_seconds = per_chunk_allowance_seconds
         self.transcript = Transcript()
         self.transcript.attach_events_manager(self.events_manager)
 
@@ -677,6 +678,8 @@ class StreamingConversation(Generic[OutputDeviceType]):
         self.idle_time_threshold = (
             self.agent.get_agent_config().allowed_idle_time_seconds or ALLOWED_IDLE_TIME
         )
+
+        self.interrupt_lock = asyncio.Lock()
 
     def create_state_manager(self) -> ConversationStateManager:
         return ConversationStateManager(conversation=self)
@@ -806,28 +809,30 @@ class StreamingConversation(Generic[OutputDeviceType]):
     def mark_last_action_timestamp(self):
         self.last_action_timestamp = time.time()
 
-    def broadcast_interrupt(self):
+    async def broadcast_interrupt(self):
         """Stops all inflight events and cancels all workers that are sending output
 
         Returns true if any events were interrupted - which is used as a flag for the agent (is_interrupt)
         """
-        num_interrupts = 0
-        while True:
-            try:
-                interruptible_event = self.interruptible_events.get_nowait()
-                if not interruptible_event.is_interrupted():
-                    if interruptible_event.interrupt():
-                        logger.debug(
-                            f"Interrupting event {type(interruptible_event.payload)} {interruptible_event.payload}",
-                        )
-                        num_interrupts += 1
-            except queue.Empty:
-                break
-        self.agent.cancel_current_task()
-        self.agent_responses_worker.cancel_current_task()
-        if self.actions_worker:
-            self.actions_worker.cancel_current_task()
-        return num_interrupts > 0
+        async with self.interrupt_lock:
+            num_interrupts = 0
+            while True:
+                try:
+                    interruptible_event = self.interruptible_events.get_nowait()
+                    if not interruptible_event.is_interrupted():
+                        if interruptible_event.interrupt():
+                            logger.debug(
+                                f"Interrupting event {type(interruptible_event.payload)} {interruptible_event.payload}",
+                            )
+                            num_interrupts += 1
+                except queue.Empty:
+                    break
+            self.output_device.interrupt()
+            self.agent.cancel_current_task()
+            self.agent_responses_worker.cancel_current_task()
+            if self.actions_worker:
+                self.actions_worker.cancel_current_task()
+            return num_interrupts > 0
 
     def is_interrupt(self, transcription: Transcription):
         return transcription.confidence >= (
@@ -880,83 +885,104 @@ class StreamingConversation(Generic[OutputDeviceType]):
         - If the stop_event is set, the output is stopped
         - Sets started_event when the first chunk is sent
 
-        Importantly, we rate limit the chunks sent to the output. For interrupts to work properly,
-        the next chunk of audio can only be sent after the last chunk is played, so we send
-        a chunk of x seconds only after x seconds have passed since the last chunk was sent.
-
         Returns the message that was sent up to, and a flag if the message was cut off
         """
+        seconds_spoken = 0.0
 
-        async def get_chunks(
-            output_queue: asyncio.Queue[Optional[SynthesisResult.ChunkResult]],
-            chunk_generator: AsyncGenerator[SynthesisResult.ChunkResult, None],
+        def create_on_play_callback(
+            chunk_idx: int,
+            processed_event: asyncio.Event,
         ):
-            try:
-                async for chunk_result in chunk_generator:
-                    await output_queue.put(chunk_result)
-            except asyncio.CancelledError:
-                pass
-            finally:
-                await output_queue.put(None)  # sentinel
+            def _on_play():
+                if chunk_idx == 0:
+                    if started_event:
+                        started_event.set()
+                    if first_chunk_span:
+                        self._track_first_chunk(first_chunk_span, synthesis_result)
+
+                nonlocal seconds_spoken
+
+                self.mark_last_action_timestamp()
+
+                seconds_spoken += seconds_per_chunk
+                if transcript_message:
+                    transcript_message.text = synthesis_result.get_message_up_to(seconds_spoken)
+
+                processed_event.set()
+
+            return _on_play
+
+        def create_on_interrupt_callback(
+            processed_event: asyncio.Event,
+        ):
+            def _on_interrupt():
+                processed_event.set()
+
+            return _on_interrupt
 
         if self.transcriber.get_transcriber_config().mute_during_speech:
             logger.debug("Muting transcriber")
             self.transcriber.mute()
-        message_sent = message
-        cut_off = False
-        chunk_size = self._get_synthesizer_chunk_size(seconds_per_chunk)
-        chunk_idx = 0
-        seconds_spoken = 0.0
         logger.debug(f"Start sending speech {message} to output")
 
         first_chunk_span = self._maybe_create_first_chunk_span(synthesis_result, message)
-        chunk_queue: asyncio.Queue[Optional[SynthesisResult.ChunkResult]] = asyncio.Queue()
-        get_chunks_task = asyncio_create_task_with_done_error_log(
-            get_chunks(chunk_queue, synthesis_result.chunk_generator),
-        )
-        first = True
-        while True:
-            chunk_result = await chunk_queue.get()
-            if chunk_result is None:
-                break
-            if first and first_chunk_span:
-                self._track_first_chunk(first_chunk_span, synthesis_result)
-            first = False
-            start_time = time.time()
-            speech_length_seconds = seconds_per_chunk * (len(chunk_result.chunk) / chunk_size)
-            seconds_spoken = chunk_idx * seconds_per_chunk
+        audio_chunks: List[AudioChunk] = []
+        processed_events: List[asyncio.Event] = []
+        interrupted_before_all_chunks_sent = False
+        async for chunk_idx, chunk_result in enumerate_async_iter(synthesis_result.chunk_generator):
             if stop_event.is_set():
-                logger.debug(
-                    "Interrupted, stopping text to speech after {} chunks".format(chunk_idx),
-                )
-                message_sent = synthesis_result.get_message_up_to(seconds_spoken)
-                cut_off = True
+                logger.debug("Interrupted before all chunks were sent")
+                interrupted_before_all_chunks_sent = True
                 break
-            if chunk_idx == 0:
-                if started_event:
-                    started_event.set()
-            self.output_device.consume_nonblocking(chunk_result.chunk)
-            end_time = time.time()
-            await asyncio.sleep(
-                max(
-                    speech_length_seconds
-                    - (end_time - start_time)
-                    - self.per_chunk_allowance_seconds,
-                    0,
-                ),
+            processed_event = asyncio.Event()
+            audio_chunk = AudioChunk(
+                data=chunk_result.chunk,
             )
-            self.mark_last_action_timestamp()
-            chunk_idx += 1
-            seconds_spoken += seconds_per_chunk
-            if transcript_message:
-                transcript_message.text = synthesis_result.get_message_up_to(seconds_spoken)
-        get_chunks_task.cancel()
+            # register callbacks
+            setattr(audio_chunk, "on_play", create_on_play_callback(chunk_idx, processed_event))
+            setattr(
+                audio_chunk,
+                "on_interrupt",
+                create_on_interrupt_callback(processed_event),
+            )
+            async with self.interrupt_lock:
+                self.output_device.consume_nonblocking(
+                    InterruptibleEvent(
+                        payload=audio_chunk,
+                        is_interruptible=True,
+                        interruption_event=stop_event,
+                    ),
+                )
+            audio_chunks.append(audio_chunk)
+            processed_events.append(processed_event)
+
+        logger.debug("Finished sending chunks to the output device")
+
+        if processed_events:
+            await processed_events[-1].wait()
+
+        maybe_first_interrupted_audio_chunk = next(
+            (
+                audio_chunk
+                for audio_chunk in audio_chunks
+                if audio_chunk.state == ChunkState.INTERRUPTED
+            ),
+            None,
+        )
+        cut_off = (
+            interrupted_before_all_chunks_sent or maybe_first_interrupted_audio_chunk is not None
+        )
+        if (
+            transcript_message and not cut_off
+        ):  # if the audio was not cut off, we can set the transcript message to the full message
+            transcript_message.text = synthesis_result.get_message_up_to(None)
+
         if self.transcriber.get_transcriber_config().mute_during_speech:
             logger.debug("Unmuting transcriber")
             self.transcriber.unmute()
         if transcript_message:
-            transcript_message.text = message_sent
             transcript_message.is_final = not cut_off
+        message_sent = transcript_message.text if transcript_message and cut_off else message
         if synthesis_result.synthesis_total_span:
             synthesis_result.synthesis_total_span.finish()
         return message_sent, cut_off
@@ -966,7 +992,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
 
     async def terminate(self):
         self.mark_terminated()
-        self.broadcast_interrupt()
+        await self.broadcast_interrupt()
         self.events_manager.publish_event(
             TranscriptCompleteEvent(
                 conversation_id=self.id,

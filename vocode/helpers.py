@@ -33,7 +33,7 @@ def create_streaming_microphone_input_and_speaker_output(
 ):
     return _create_microphone_input_and_speaker_output(
         microphone_class=StreamingMicrophoneInput,
-        speaker_class=(BlockingStreamingSpeakerOutput),
+        speaker_class=BlockingStreamingSpeakerOutput,
         use_default_devices=use_default_devices,
         input_device_name=input_device_name,
         output_device_name=output_device_name,

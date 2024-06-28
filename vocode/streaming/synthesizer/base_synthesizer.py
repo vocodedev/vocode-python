@@ -50,6 +50,13 @@ def encode_as_wav(chunk: bytes, synthesizer_config: SynthesizerConfig) -> bytes:
 
 
 class SynthesisResult:
+    """Holds audio bytes for an utterance and method to know how much of utterance was spoken
+
+    @param chunk_generator - an async generator that that yields ChunkResult objects, which contain chunks of audio and a flag indicating if it is the last chunk
+    @param get_message_up_to - takes in the number of seconds spoken and returns the message up to that point
+    - *if seconds is None, then it should return the full messages*
+    """
+
     class ChunkResult:
         def __init__(self, chunk: bytes, is_last_chunk: bool):
             self.chunk = chunk
@@ -58,7 +65,7 @@ class SynthesisResult:
     def __init__(
         self,
         chunk_generator: AsyncGenerator[ChunkResult, None],
-        get_message_up_to: Callable[[float], str],
+        get_message_up_to: Callable[[Optional[float]], str],
         cached: bool = False,
         is_first: bool = False,
         synthesis_total_span: Optional[SentrySpan] = None,
@@ -111,7 +118,7 @@ class FillerAudio:
             )
         else:
             output_generator = chunk_generator()
-        return SynthesisResult(output_generator, lambda seconds: self.message.text)
+        return SynthesisResult(output_generator, lambda _: self.message.text)
 
 
 class CachedAudio:
@@ -150,12 +157,12 @@ class CachedAudio:
 
         if isinstance(self.message, BotBackchannel):
 
-            def get_message_up_to(seconds):
+            def get_message_up_to(seconds: Optional[float]):
                 return self.message.text
 
         else:
 
-            def get_message_up_to(seconds):
+            def get_message_up_to(seconds: Optional[float]):
                 return BaseSynthesizer.get_message_cutoff_from_total_response_length(
                     self.synthesizer_config, self.message, seconds, len(self.audio_data)
                 )
@@ -273,11 +280,14 @@ class BaseSynthesizer(Generic[SynthesizerConfigType]):
     def get_message_cutoff_from_total_response_length(
         synthesizer_config: SynthesizerConfig,
         message: BaseMessage,
-        seconds: float,
+        seconds: Optional[float],
         size_of_output: int,
     ) -> str:
         estimated_output_seconds = size_of_output / synthesizer_config.sampling_rate
         if not message.text:
+            return message.text
+
+        if seconds is None:
             return message.text
 
         estimated_output_seconds_per_char = estimated_output_seconds / len(message.text)
@@ -285,8 +295,12 @@ class BaseSynthesizer(Generic[SynthesizerConfigType]):
 
     @staticmethod
     def get_message_cutoff_from_voice_speed(
-        message: BaseMessage, seconds: float, words_per_minute: int
+        message: BaseMessage, seconds: Optional[float], words_per_minute: int
     ) -> str:
+
+        if seconds is None:
+            return message.text
+
         words_per_second = words_per_minute / 60
         estimated_words_spoken = math.floor(words_per_second * seconds)
         tokens = word_tokenize(message.text)
