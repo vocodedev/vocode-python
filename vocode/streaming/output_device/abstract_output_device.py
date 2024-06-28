@@ -16,7 +16,7 @@ class AbstractOutputDevice(AsyncWorker[InterruptibleEvent[AudioChunk]]):
     """
 
     def __init__(self, sampling_rate: int, audio_encoding: AudioEncoding):
-        super().__init__(input_queue=asyncio.Queue())
+        super().__init__()
         self.sampling_rate = sampling_rate
         self.audio_encoding = audio_encoding
 
