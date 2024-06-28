@@ -72,7 +72,7 @@ class WhisperCPPTranscriber(BaseThreadAsyncTranscriber[WhisperCPPTranscriberConf
                 message_buffer += message
                 is_final = any(message_buffer.endswith(ending) for ending in SENTENCE_ENDINGS)
                 in_memory_wav, audio_buffer = self.create_new_buffer()
-                self.output_queue.put_nowait(
+                self.produce_nonblocking(
                     Transcription(message=message_buffer, confidence=confidence, is_final=is_final)
                 )
                 if is_final:

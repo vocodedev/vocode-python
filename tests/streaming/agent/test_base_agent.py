@@ -19,7 +19,11 @@ from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.transcriber import Transcription
 from vocode.streaming.models.transcript import Transcript
 from vocode.streaming.utils.state_manager import ConversationStateManager
-from vocode.streaming.utils.worker import InterruptibleEvent
+from vocode.streaming.utils.worker import (
+    InterruptibleAgentResponseEvent,
+    InterruptibleEvent,
+    QueueConsumer,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -51,11 +55,16 @@ def _create_agent(
     return agent
 
 
-async def _consume_until_end_of_turn(agent: BaseAgent, timeout: float = 0.1) -> List[AgentResponse]:
+async def _consume_until_end_of_turn(
+    agent_consumer: QueueConsumer[InterruptibleAgentResponseEvent[AgentResponse]],
+    timeout: float = 0.1,
+) -> List[AgentResponse]:
     agent_responses = []
     try:
         while True:
-            agent_response = await asyncio.wait_for(agent.output_queue.get(), timeout=timeout)
+            agent_response = await asyncio.wait_for(
+                agent_consumer.input_queue.get(), timeout=timeout
+            )
             agent_responses.append(agent_response.payload)
             if isinstance(agent_response.payload, AgentResponseMessage) and isinstance(
                 agent_response.payload.message, EndOfTurn
@@ -127,37 +136,10 @@ async def test_generate_responses(mocker: MockerFixture):
         agent,
         Transcription(message="Hello?", confidence=1.0, is_final=True),
     )
+    agent_consumer = QueueConsumer()
+    agent.agent_responses_consumer = agent_consumer
     agent.start()
-    agent_responses = await _consume_until_end_of_turn(agent)
-    agent.terminate()
-
-    messages = [response.message for response in agent_responses]
-
-    assert messages == [BaseMessage(text="Hi, how are you doing today?"), EndOfTurn()]
-
-
-@pytest.mark.asyncio
-async def test_generate_response(mocker: MockerFixture):
-    agent_config = ChatGPTAgentConfig(
-        prompt_preamble="Have a pleasant conversation about life",
-        generate_responses=True,
-    )
-    agent = _create_agent(mocker, agent_config)
-    _mock_generate_response(
-        mocker,
-        agent,
-        [
-            GeneratedResponse(
-                message=BaseMessage(text="Hi, how are you doing today?"), is_interruptible=True
-            )
-        ],
-    )
-    _send_transcription(
-        agent,
-        Transcription(message="Hello?", confidence=1.0, is_final=True),
-    )
-    agent.start()
-    agent_responses = await _consume_until_end_of_turn(agent)
+    agent_responses = await _consume_until_end_of_turn(agent_consumer)
     agent.terminate()
 
     messages = [response.message for response in agent_responses]

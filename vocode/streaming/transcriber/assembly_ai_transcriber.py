@@ -75,7 +75,7 @@ class AssemblyAITranscriber(BaseAsyncTranscriber[AssemblyAITranscriberConfig]):
         if (
             len(self.buffer) / (2 * self.transcriber_config.sampling_rate)
         ) >= self.transcriber_config.buffer_size_seconds:
-            self.input_queue.put_nowait(self.buffer)
+            self.consume_nonblocking(self.buffer)
             self.buffer = bytearray()
 
     def terminate(self):
@@ -133,7 +133,7 @@ class AssemblyAITranscriber(BaseAsyncTranscriber[AssemblyAITranscriberConfig]):
                     is_final = "message_type" in data and data["message_type"] == "FinalTranscript"
 
                     if "text" in data and data["text"]:
-                        self.output_queue.put_nowait(
+                        self.produce_nonblocking(
                             Transcription(
                                 message=data["text"],
                                 confidence=data["confidence"],

@@ -5,6 +5,15 @@ from vocode.streaming.transcriber.deepgram_transcriber import (
     DeepgramEndpointingConfig,
     DeepgramTranscriber,
 )
+from vocode.streaming.utils.worker import AsyncWorker
+
+
+class TranscriptionPrinter(AsyncWorker[Transcription]):
+    async def _run_loop(self):
+        while True:
+            transcription: Transcription = await self.input_queue.get()
+            print(transcription)
+
 
 if __name__ == "__main__":
     import asyncio
@@ -12,11 +21,6 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
 
     load_dotenv()
-
-    async def print_output(transcriber: BaseTranscriber):
-        while True:
-            transcription: Transcription = await transcriber.output_queue.get()
-            print(transcription)
 
     async def listen():
         microphone_input = MicrophoneInput.from_default_device()
@@ -28,7 +32,9 @@ if __name__ == "__main__":
             )
         )
         transcriber.start()
-        asyncio.create_task(print_output(transcriber))
+        transcription_printer = TranscriptionPrinter()
+        transcriber.consumer = transcription_printer
+        transcription_printer.start()
         print("Start speaking...press Ctrl+C to end. ")
         while True:
             chunk = await microphone_input.get_audio()

@@ -66,12 +66,6 @@ class AbstractPhoneConversation(StreamingConversation[TelephonyOutputDeviceType]
             events_manager=events_manager,
             speed_coefficient=speed_coefficient,
         )
-        self.transcriptions_worker = self.TranscriptionsWorker(
-            input_queue=self.transcriber.output_queue,
-            output_queue=self.agent.get_input_queue(),
-            conversation=self,
-            interruptible_event_factory=self.interruptible_event_factory,
-        )
         self.config_manager = config_manager
 
     def attach_ws(self, ws: WebSocket):

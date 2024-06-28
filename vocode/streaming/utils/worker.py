@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from typing import Any, Generic, Optional, TypeVar
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Generic, List, Optional, TypeVar
 
 import janus
 from loguru import logger
@@ -12,15 +13,39 @@ from vocode.streaming.utils.create_task import asyncio_create_task_with_done_err
 WorkerInputType = TypeVar("WorkerInputType")
 
 
-class AsyncWorker(Generic[WorkerInputType]):
+class AbstractWorker(Generic[WorkerInputType], ABC):
+    @abstractmethod
+    def start(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def consume_nonblocking(self, item: WorkerInputType):
+        raise NotImplementedError
+
+    def terminate(self):
+        pass
+
+
+class QueueConsumer(AbstractWorker[WorkerInputType]):
     def __init__(
         self,
-        input_queue: asyncio.Queue[WorkerInputType],
-        output_queue: asyncio.Queue = asyncio.Queue(),
+        input_queue: Optional[asyncio.Queue[WorkerInputType]] = None,
+    ) -> None:
+        self.input_queue: asyncio.Queue[WorkerInputType] = input_queue or asyncio.Queue()
+
+    def consume_nonblocking(self, item: WorkerInputType):
+        self.input_queue.put_nowait(item)
+
+    def start(self):
+        pass
+
+
+class AsyncWorker(AbstractWorker[WorkerInputType]):
+    def __init__(
+        self,
     ) -> None:
         self.worker_task: Optional[asyncio.Task] = None
-        self.input_queue = input_queue
-        self.output_queue = output_queue
+        self.input_queue: asyncio.Queue[WorkerInputType] = asyncio.Queue()
 
     def start(self) -> asyncio.Task:
         self.worker_task = asyncio_create_task_with_done_error_log(
@@ -32,9 +57,6 @@ class AsyncWorker(Generic[WorkerInputType]):
 
     def consume_nonblocking(self, item: WorkerInputType):
         self.input_queue.put_nowait(item)
-
-    def produce_nonblocking(self, item):
-        self.output_queue.put_nowait(item)
 
     async def _run_loop(self):
         raise NotImplementedError
@@ -49,10 +71,8 @@ class AsyncWorker(Generic[WorkerInputType]):
 class ThreadAsyncWorker(AsyncWorker[WorkerInputType]):
     def __init__(
         self,
-        input_queue: asyncio.Queue[WorkerInputType],
-        output_queue: asyncio.Queue = asyncio.Queue(),
     ) -> None:
-        super().__init__(input_queue, output_queue)
+        super().__init__()
         self.worker_thread: Optional[threading.Thread] = None
         self.input_janus_queue: janus.Queue[WorkerInputType] = janus.Queue()
         self.output_janus_queue: janus.Queue = janus.Queue()
@@ -69,10 +89,7 @@ class ThreadAsyncWorker(AsyncWorker[WorkerInputType]):
 
     async def run_thread_forwarding(self):
         try:
-            await asyncio.gather(
-                self._forward_to_thread(),
-                self._forward_from_thead(),
-            )
+            await self._forward_to_thread()
         except asyncio.CancelledError:
             return
 
@@ -81,16 +98,8 @@ class ThreadAsyncWorker(AsyncWorker[WorkerInputType]):
             item = await self.input_queue.get()
             self.input_janus_queue.async_q.put_nowait(item)
 
-    async def _forward_from_thead(self):
-        while True:
-            item = await self.output_janus_queue.async_q.get()
-            self.output_queue.put_nowait(item)
-
     def _run_loop(self):
         raise NotImplementedError
-
-    def terminate(self):
-        return super().terminate()
 
 
 class AsyncQueueWorker(AsyncWorker[WorkerInputType]):
@@ -180,38 +189,14 @@ InterruptibleEventType = TypeVar("InterruptibleEventType", bound=InterruptibleEv
 class InterruptibleWorker(AsyncWorker[InterruptibleEventType]):
     def __init__(
         self,
-        input_queue: asyncio.Queue[InterruptibleEventType],
-        output_queue: asyncio.Queue = asyncio.Queue(),
         interruptible_event_factory: InterruptibleEventFactory = InterruptibleEventFactory(),
         max_concurrency=2,
     ) -> None:
-        super().__init__(input_queue, output_queue)
-        self.input_queue = input_queue
+        super().__init__()
         self.max_concurrency = max_concurrency
         self.interruptible_event_factory = interruptible_event_factory
         self.current_task = None
         self.interruptible_event = None
-
-    def produce_interruptible_event_nonblocking(self, item: Any, is_interruptible: bool = True):
-        interruptible_event = self.interruptible_event_factory.create_interruptible_event(
-            item, is_interruptible=is_interruptible
-        )
-        return super().produce_nonblocking(interruptible_event)
-
-    def produce_interruptible_agent_response_event_nonblocking(
-        self,
-        item: Any,
-        is_interruptible: bool = True,
-        agent_response_tracker: Optional[asyncio.Event] = None,
-    ):
-        interruptible_utterance_event = (
-            self.interruptible_event_factory.create_interruptible_agent_response_event(
-                item,
-                is_interruptible=is_interruptible,
-                agent_response_tracker=agent_response_tracker or asyncio.Event(),
-            )
-        )
-        return super().produce_nonblocking(interruptible_utterance_event)
 
     async def _run_loop(self):
         # TODO Implement concurrency with max_nb_of_thread

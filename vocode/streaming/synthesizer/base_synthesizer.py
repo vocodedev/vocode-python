@@ -22,6 +22,7 @@ from vocode.streaming.telephony.constants import MULAW_SILENCE_BYTE, PCM_SILENCE
 from vocode.streaming.utils import convert_wav, get_chunk_size_per_second
 from vocode.streaming.utils.async_requester import AsyncRequestor
 from vocode.streaming.utils.create_task import asyncio_create_task_with_done_error_log
+from vocode.streaming.utils.worker import QueueConsumer
 
 FILLER_PHRASES = [
     BaseMessage(text="Um..."),
@@ -410,14 +411,12 @@ class BaseSynthesizer(Generic[SynthesizerConfigType]):
         response: aiohttp.ClientResponse,
         chunk_size: int,
     ) -> AsyncGenerator[SynthesisResult.ChunkResult, None]:
-        miniaudio_worker_input_queue: asyncio.Queue[Union[bytes, None]] = asyncio.Queue()
-        miniaudio_worker_output_queue: asyncio.Queue[Tuple[bytes, bool]] = asyncio.Queue()
+        miniaudio_worker_consumer: QueueConsumer = QueueConsumer()
         miniaudio_worker = MiniaudioWorker(
             self.synthesizer_config,
             chunk_size,
-            miniaudio_worker_input_queue,
-            miniaudio_worker_output_queue,
         )
+        miniaudio_worker.consumer = miniaudio_worker_consumer
         miniaudio_worker.start()
         stream_reader = response.content
 
@@ -433,7 +432,7 @@ class BaseSynthesizer(Generic[SynthesizerConfigType]):
             # Await the output queue of the MiniaudioWorker and yield the wav chunks in another loop
             while True:
                 # Get the wav chunk and the flag from the output queue of the MiniaudioWorker
-                wav_chunk, is_last = await miniaudio_worker.output_queue.get()
+                wav_chunk, is_last = await miniaudio_worker_consumer.input_queue.get()
                 if self.synthesizer_config.should_encode_as_wav:
                     wav_chunk = encode_as_wav(wav_chunk, self.synthesizer_config)
 
