@@ -19,8 +19,7 @@ class _PlaybackWorker(ThreadAsyncWorker[bytes]):
     def __init__(self, *, device_info: dict, sampling_rate: int):
         self.sampling_rate = sampling_rate
         self.device_info = device_info
-        self.input_queue: asyncio.Queue[bytes] = asyncio.Queue()
-        super().__init__(self.input_queue)
+        super().__init__()
         self.stream = sd.OutputStream(
             channels=1,
             samplerate=self.sampling_rate,
@@ -28,7 +27,7 @@ class _PlaybackWorker(ThreadAsyncWorker[bytes]):
             device=int(self.device_info["index"]),
         )
         self._ended = False
-        self.input_queue.put_nowait(self.sampling_rate * b"\x00")
+        self.consume_nonblocking(self.sampling_rate * b"\x00")
         self.stream.start()
 
     def _run_loop(self):

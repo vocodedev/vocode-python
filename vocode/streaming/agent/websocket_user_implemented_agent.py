@@ -27,7 +27,6 @@ NUM_RESTARTS = 5
 
 class WebSocketUserImplementedAgent(BaseAgent[WebSocketUserImplementedAgentConfig]):
     input_queue: asyncio.Queue[InterruptibleEvent[AgentInput]]
-    output_queue: asyncio.Queue[InterruptibleAgentResponseEvent[AgentResponse]]
 
     def __init__(
         self,
@@ -63,8 +62,11 @@ class WebSocketUserImplementedAgent(BaseAgent[WebSocketUserImplementedAgentConfi
             raise Exception("Unknown Socket message type")
 
         logger.info("Putting interruptible agent response event in output queue")
-        self.produce_interruptible_agent_response_event_nonblocking(
-            agent_response, self.get_agent_config().allow_agent_to_be_cut_off
+        self.agent_responses_consumer.consume_nonblocking(
+            self.interruptible_event_factory.create_interruptible_agent_response_event(
+                agent_response,
+                is_interruptible=self.get_agent_config().allow_agent_to_be_cut_off,
+            )
         )
 
     async def _process(self) -> None:
@@ -137,5 +139,9 @@ class WebSocketUserImplementedAgent(BaseAgent[WebSocketUserImplementedAgentConfi
             await asyncio.gather(sender(ws), receiver(ws))
 
     def terminate(self):
-        self.produce_interruptible_agent_response_event_nonblocking(AgentResponseStop())
+        self.agent_responses_consumer.consume_nonblocking(
+            self.interruptible_event_factory.create_interruptible_agent_response_event(
+                AgentResponseStop()
+            )
+        )
         super().terminate()

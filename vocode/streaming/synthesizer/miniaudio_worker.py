@@ -10,22 +10,38 @@ from loguru import logger
 from vocode.streaming.models.synthesizer import SynthesizerConfig
 from vocode.streaming.utils import convert_wav
 from vocode.streaming.utils.mp3_helper import decode_mp3
-from vocode.streaming.utils.worker import ThreadAsyncWorker
+from vocode.streaming.utils.worker import AbstractWorker, ThreadAsyncWorker
 
 
 class MiniaudioWorker(ThreadAsyncWorker[Union[bytes, None]]):
+    consumer: AbstractWorker[Tuple[bytes, bool]]
+
     def __init__(
         self,
         synthesizer_config: SynthesizerConfig,
         chunk_size: int,
-        input_queue: asyncio.Queue[Union[bytes, None]],
-        output_queue: asyncio.Queue[Tuple[bytes, bool]],
     ) -> None:
-        super().__init__(input_queue, output_queue)
-        self.output_queue = output_queue  # for typing
+        super().__init__()
         self.synthesizer_config = synthesizer_config
         self.chunk_size = chunk_size
         self._ended = False
+
+    async def run_thread_forwarding(self):
+        try:
+            await asyncio.gather(
+                self._forward_to_thread(),
+                self._forward_from_thread(),
+            )
+        except asyncio.CancelledError:
+            return
+
+    async def _forward_from_thread(self):
+        while True:
+            try:
+                chunk, done = await self.output_janus_queue.async_q.get()
+                self.consumer.consume_nonblocking((chunk, done))
+            except asyncio.CancelledError:
+                break
 
     def _run_loop(self):
         # tracks the mp3 so far

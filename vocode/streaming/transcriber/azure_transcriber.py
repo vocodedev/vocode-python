@@ -79,12 +79,12 @@ class AzureTranscriber(BaseThreadAsyncTranscriber[AzureTranscriberConfig]):
             op=CustomSentrySpans.LATENCY_OF_CONVERSATION,
             start_timestamp=datetime.now(tz=timezone.utc),
         )
-        self.output_janus_queue.sync_q.put_nowait(
+        self.produce_nonblocking(
             Transcription(message=evt.result.text, confidence=1.0, is_final=True)
         )
 
     def recognized_sentence_stream(self, evt):
-        self.output_janus_queue.sync_q.put_nowait(
+        self.produce_nonblocking(
             Transcription(message=evt.result.text, confidence=1.0, is_final=False)
         )
 

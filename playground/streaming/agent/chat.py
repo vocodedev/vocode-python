@@ -21,12 +21,13 @@ from vocode.streaming.models.agent import ChatGPTAgentConfig
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.transcript import Transcript
 from vocode.streaming.utils.state_manager import AbstractConversationStateManager
-from vocode.streaming.utils.worker import InterruptibleAgentResponseEvent
+from vocode.streaming.utils.worker import InterruptibleAgentResponseEvent, QueueConsumer
 
 load_dotenv()
 
 from vocode.streaming.agent import ChatGPTAgent
 from vocode.streaming.agent.base_agent import (
+    AgentResponse,
     AgentResponseMessage,
     AgentResponseType,
     BaseAgent,
@@ -96,6 +97,11 @@ async def run_agent(
 ):
     ended = False
     conversation_id = create_conversation_id()
+    agent_response_queue: asyncio.Queue[InterruptibleAgentResponseEvent[AgentResponse]] = (
+        asyncio.Queue()
+    )
+    agent_consumer = QueueConsumer(input_queue=agent_response_queue)
+    agent.agent_responses_consumer = agent_consumer
 
     async def receiver():
         nonlocal ended
@@ -106,7 +112,7 @@ async def run_agent(
 
         while not ended:
             try:
-                event = await agent.get_output_queue().get()
+                event = await agent_response_queue.get()
                 response = event.payload
                 if response.type == AgentResponseType.FILLER_AUDIO:
                     print("Would have sent filler audio")
@@ -175,10 +181,10 @@ async def run_agent(
     actions_worker = None
     if isinstance(agent, ChatGPTAgent):
         actions_worker = ActionsWorker(
-            input_queue=agent.actions_queue,
-            output_queue=agent.get_input_queue(),
             action_factory=agent.action_factory,
         )
+        actions_worker.consumer = agent
+        agent.actions_consumer = actions_worker
         actions_worker.attach_conversation_state_manager(agent.conversation_state_manager)
         actions_worker.start()
 
