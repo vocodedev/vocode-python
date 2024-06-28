@@ -1,9 +1,11 @@
-from typing import TYPE_CHECKING, List
 import uuid
+from typing import TYPE_CHECKING, List
+
+from livekit import rtc
+
 from vocode.streaming.models.events import Event, EventType, Sender
 from vocode.streaming.models.transcript import TranscriptEvent
 from vocode.streaming.utils.events_manager import EventsManager
-from livekit import rtc
 
 if TYPE_CHECKING:
     from vocode.streaming.livekit.livekit_conversation import LiveKitConversation

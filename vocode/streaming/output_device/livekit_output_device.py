@@ -1,7 +1,9 @@
 import asyncio
+
+from livekit import rtc
+
 from vocode.streaming.models.audio import AudioEncoding
 from vocode.streaming.output_device.abstract_output_device import AbstractOutputDevice
-from livekit import rtc
 from vocode.streaming.output_device.audio_chunk import ChunkState
 
 NUM_CHANNELS = 1

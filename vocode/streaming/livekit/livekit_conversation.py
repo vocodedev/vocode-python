@@ -1,10 +1,11 @@
 import asyncio
 
-from loguru import logger
-from vocode.streaming.livekit.livekit_events_manager import LiveKitEventsManager
-from vocode.streaming.streaming_conversation import StreamingConversation
-from vocode.streaming.output_device.livekit_output_device import LiveKitOutputDevice
 from livekit import rtc
+from loguru import logger
+
+from vocode.streaming.livekit.livekit_events_manager import LiveKitEventsManager
+from vocode.streaming.output_device.livekit_output_device import LiveKitOutputDevice
+from vocode.streaming.streaming_conversation import StreamingConversation
 
 
 class LiveKitConversation(StreamingConversation[LiveKitOutputDevice]):
