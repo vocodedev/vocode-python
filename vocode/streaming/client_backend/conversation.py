@@ -23,7 +23,7 @@ from vocode.streaming.models.websocket import (
 from vocode.streaming.output_device.websocket_output_device import WebsocketOutputDevice
 from vocode.streaming.streaming_conversation import StreamingConversation
 from vocode.streaming.synthesizer.azure_synthesizer import AzureSynthesizer
-from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer
+from vocode.streaming.synthesizer.abstract_synthesizer import AbstractSynthesizer
 from vocode.streaming.transcriber.base_transcriber import BaseTranscriber
 from vocode.streaming.transcriber.deepgram_transcriber import DeepgramTranscriber
 from vocode.streaming.utils import events_manager
@@ -45,7 +45,7 @@ class ConversationRouter(BaseRouter):
             )
         ),
         synthesizer_thunk: Callable[
-            [OutputAudioConfig], BaseSynthesizer
+            [OutputAudioConfig], AbstractSynthesizer
         ] = lambda output_audio_config: AzureSynthesizer(
             AzureSynthesizerConfig.from_output_audio_config(output_audio_config=output_audio_config)
         ),

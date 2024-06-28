@@ -1,7 +1,9 @@
 from typing import TYPE_CHECKING, Optional
 
 from vocode.streaming.models.transcriber import EndpointingConfig
-from vocode.streaming.synthesizer.input_streaming_synthesizer import InputStreamingSynthesizer
+from vocode.streaming.synthesizer.abstract_input_streaming_synthesizer import (
+    AbstractInputStreamingSynthesizer,
+)
 from vocode.streaming.telephony.client.twilio_client import TwilioClient
 from vocode.streaming.telephony.client.vonage_client import VonageClient
 from vocode.streaming.utils.redis_conversation_message_queue import RedisConversationMessageQueue
@@ -102,7 +104,7 @@ class ConversationStateManager(AbstractConversationStateManager):
     def using_input_streaming_synthesizer(self):
         return isinstance(
             self._conversation.synthesizer,
-            InputStreamingSynthesizer,
+            AbstractInputStreamingSynthesizer,
         )
 
     async def terminate_conversation(self):

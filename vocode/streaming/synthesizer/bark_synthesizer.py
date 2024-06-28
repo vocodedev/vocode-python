@@ -3,16 +3,18 @@ import io
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+from vocode.streaming.synthesizer.synthesis_result import SynthesisResult
+from vocode.streaming.synthesizer.synthesizer_utils import create_synthesis_result_from_wav
 from bark import SAMPLE_RATE, generate_audio, preload_models
 from loguru import logger
 from scipy.io.wavfile import write as write_wav
 
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.synthesizer import BarkSynthesizerConfig
-from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer, SynthesisResult
+from vocode.streaming.synthesizer.abstract_synthesizer import AbstractSynthesizer
 
 
-class BarkSynthesizer(BaseSynthesizer[BarkSynthesizerConfig]):
+class BarkSynthesizer(AbstractSynthesizer[BarkSynthesizerConfig]):
     def __init__(
         self,
         synthesizer_config: BarkSynthesizerConfig,
@@ -44,7 +46,7 @@ class BarkSynthesizer(BaseSynthesizer[BarkSynthesizerConfig]):
         output_bytes_io = io.BytesIO()
         write_wav(output_bytes_io, self.SAMPLE_RATE, int_audio_arr)
 
-        result = self.create_synthesis_result_from_wav(
+        result = create_synthesis_result_from_wav(
             synthesizer_config=self.synthesizer_config,
             file=output_bytes_io,
             message=message,

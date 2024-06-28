@@ -1,14 +1,13 @@
 import asyncio
 import json
 
+from vocode.streaming.agent.agent_response import AgentResponse
 import websockets
 from loguru import logger
 from websockets.client import WebSocketClientProtocol, connect
 
 from vocode.streaming.agent.base_agent import (
     AgentInput,
-    AgentResponse,
-    AgentResponse,
     BaseAgent,
     TranscriptionAgentInput,
 )

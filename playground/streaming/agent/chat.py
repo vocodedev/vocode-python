@@ -8,6 +8,7 @@ from pydantic.v1 import BaseModel
 from vocode.streaming.action.abstract_factory import AbstractActionFactory
 from vocode.streaming.action.base_action import BaseAction
 from vocode.streaming.action.worker import ActionsWorker
+from vocode.streaming.agent.agent_response import AgentResponse
 from vocode.streaming.models.actions import (
     ActionConfig,
     ActionInput,
@@ -27,8 +28,6 @@ load_dotenv()
 
 from vocode.streaming.agent import ChatGPTAgent
 from vocode.streaming.agent.base_agent import (
-    AgentResponse,
-    AgentResponse,
     BaseAgent,
     TranscriptionAgentInput,
 )

@@ -7,12 +7,14 @@ from aiohttp import ClientTimeout
 from vocode.streaming.models.audio import AudioEncoding
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.synthesizer import PlayHtSynthesizerConfig
-from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer, SynthesisResult
+from vocode.streaming.synthesizer.abstract_synthesizer import AbstractSynthesizer
+from vocode.streaming.synthesizer.synthesis_result import SynthesisResult
+from vocode.streaming.synthesizer.synthesizer_utils import get_message_cutoff_from_voice_speed
 
 TTS_ENDPOINT = "https://play.ht/api/v2/tts/stream"
 
 
-class PlayHtSynthesizer(BaseSynthesizer[PlayHtSynthesizerConfig]):
+class PlayHtSynthesizer(AbstractSynthesizer[PlayHtSynthesizerConfig]):
     def __init__(
         self,
         synthesizer_config: PlayHtSynthesizerConfig,
@@ -92,14 +94,14 @@ class PlayHtSynthesizer(BaseSynthesizer[PlayHtSynthesizerConfig]):
                     self.experimental_mp3_streaming_output_generator(
                         response, chunk_size
                     ),  # should be wav
-                    lambda seconds: self.get_message_cutoff_from_voice_speed(
+                    lambda seconds: get_message_cutoff_from_voice_speed(
                         message, seconds, self.words_per_minute
                     ),
                 )
             else:
                 return SynthesisResult(
                     self._streaming_chunk_generator(response, chunk_size, output_format),
-                    lambda seconds: self.get_message_cutoff_from_voice_speed(message, seconds, 150),
+                    lambda seconds: get_message_cutoff_from_voice_speed(message, seconds, 150),
                 )
 
         raise Exception("Max retries reached for Play.ht API")

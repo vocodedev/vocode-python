@@ -4,14 +4,16 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from pydub import AudioSegment
+from vocode.streaming.synthesizer.synthesis_result import SynthesisResult
+from vocode.streaming.synthesizer.synthesizer_utils import create_synthesis_result_from_wav
 from TTS.api import TTS
 
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.synthesizer import CoquiTTSSynthesizerConfig
-from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer, SynthesisResult
+from vocode.streaming.synthesizer.abstract_synthesizer import AbstractSynthesizer
 
 
-class CoquiTTSSynthesizer(BaseSynthesizer[CoquiTTSSynthesizerConfig]):
+class CoquiTTSSynthesizer(AbstractSynthesizer[CoquiTTSSynthesizerConfig]):
     def __init__(
         self,
         synthesizer_config: CoquiTTSSynthesizerConfig,
@@ -53,7 +55,7 @@ class CoquiTTSSynthesizer(BaseSynthesizer[CoquiTTSSynthesizerConfig]):
         output_bytes_io = io.BytesIO()
         audio_segment.export(output_bytes_io, format="wav")  # type: ignore
 
-        result = self.create_synthesis_result_from_wav(
+        result = create_synthesis_result_from_wav(
             synthesizer_config=self.synthesizer_config,
             file=output_bytes_io,
             message=message,

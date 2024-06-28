@@ -3,18 +3,19 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
 
+from vocode.streaming.synthesizer.synthesis_result import SynthesisResult
+from vocode.streaming.synthesizer.synthesizer_utils import encode_as_wav
+
 import boto3
 
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.synthesizer import PollySynthesizerConfig
-from vocode.streaming.synthesizer.base_synthesizer import (
-    BaseSynthesizer,
-    SynthesisResult,
-    encode_as_wav,
+from vocode.streaming.synthesizer.abstract_synthesizer import (
+    AbstractSynthesizer,
 )
 
 
-class PollySynthesizer(BaseSynthesizer[PollySynthesizerConfig]):
+class PollySynthesizer(AbstractSynthesizer[PollySynthesizerConfig]):
     def __init__(
         self,
         synthesizer_config: PollySynthesizerConfig,

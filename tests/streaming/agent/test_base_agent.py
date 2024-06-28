@@ -5,9 +5,8 @@ import pytest
 from pytest_mock import MockerFixture
 
 from vocode.streaming.action.abstract_factory import AbstractActionFactory
+from vocode.streaming.agent.agent_response import AgentResponse
 from vocode.streaming.agent.base_agent import (
-    AgentResponse,
-    AgentResponse,
     BaseAgent,
     GeneratedResponse,
     TranscriptionAgentInput,

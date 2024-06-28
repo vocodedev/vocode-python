@@ -13,7 +13,7 @@ from vocode.streaming.models.transcriber import DeepgramTranscriberConfig, Trans
 from vocode.streaming.output_device.abstract_output_device import AbstractOutputDevice
 from vocode.streaming.output_device.audio_chunk import ChunkState
 from vocode.streaming.streaming_conversation import StreamingConversation
-from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer
+from vocode.streaming.synthesizer.abstract_synthesizer import AbstractSynthesizer
 from vocode.streaming.telephony.constants import DEFAULT_CHUNK_SIZE, DEFAULT_SAMPLING_RATE
 from vocode.streaming.transcriber.base_transcriber import BaseTranscriber
 from vocode.streaming.transcriber.deepgram_transcriber import DeepgramEndpointingConfig
@@ -111,7 +111,7 @@ def create_fake_streaming_conversation(
     mocker: MockerFixture,
     transcriber: Optional[BaseTranscriber[TranscriberConfig]] = None,
     agent: Optional[BaseAgent] = None,
-    synthesizer: Optional[BaseSynthesizer] = None,
+    synthesizer: Optional[AbstractSynthesizer] = None,
     speed_coefficient: float = 1.0,
     conversation_id: Optional[str] = None,
     events_manager: Optional[EventsManager] = None,

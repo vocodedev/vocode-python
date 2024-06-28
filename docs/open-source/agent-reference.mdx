@@ -9,23 +9,22 @@ title: "Agent Reference"
 </ParamField>
 
 <ParamField body="generate_responses" type="bool">
-  Whether the agent should generate responses continuously (True) or only respond once per human input (False).
+  Whether the agent should generate responses continuously (True) or only
+  respond once per human input (False).
 </ParamField>
 
 <ParamField body="allowed_idle_time_seconds" type="Optional[float]">
-  The maximum number of seconds the agent is allowed to go without speaking before being considered idle.
+  The maximum number of seconds the agent is allowed to go without speaking
+  before being considered idle.
 </ParamField>
 
 <ParamField body="allow_agent_to_be_cut_off" type="bool">
   Whether the human can interrupt the agent while it is speaking.
 </ParamField>
 
-<ParamField body="end_conversation_on_goodbye" type="bool">
-  Whether the agent should end the conversation when it detects the human saying goodbye.
-</ParamField>
-
 <ParamField body="send_filler_audio" type="Union[bool, FillerAudioConfig]">
-  Whether to play filler audio (typing noises or phrases like "uh" and "um") when the agent is thinking. Can be configured via FillerAudioConfig.
+  Whether to play filler audio (typing noises or phrases like "uh" and "um")
+  when the agent is thinking. Can be configured via FillerAudioConfig.
 </ParamField>
 
 <ParamField body="webhook_config" type="Optional[WebhookConfig]">
@@ -40,15 +39,17 @@ title: "Agent Reference"
   Configuration for custom actions the agent can take, such as making API calls.
 </ParamField>
 
-
 # `LLMAgentConfig`
 
 <ParamField body="prompt_preamble" type="str">
-  The preamble text to prepend before the prompt when generating responses. This allows priming the model.
+  The preamble text to prepend before the prompt when generating responses. This
+  allows priming the model.
 </ParamField>
 
 <ParamField body="expected_first_prompt" type="Optional[str]">
-  The prompt to use for generating the first response from the agent. If not provided, the agent will generate a response to the first user message without any initial prompt.
+  The prompt to use for generating the first response from the agent. If not
+  provided, the agent will generate a response to the first user message without
+  any initial prompt.
 </ParamField>
 
 <ParamField body="model_name" type="str">
@@ -56,7 +57,9 @@ title: "Agent Reference"
 </ParamField>
 
 <ParamField body="temperature" type="float">
-  The sampling temperature to use for the model. Higher values means the model will take more risks. Try 0.9 for more creative applications, and 0 for ones with a well-defined answer.
+  The sampling temperature to use for the model. Higher values means the model
+  will take more risks. Try 0.9 for more creative applications, and 0 for ones
+  with a well-defined answer.
 </ParamField>
 
 <ParamField body="max_tokens" type="int">
@@ -67,15 +70,17 @@ title: "Agent Reference"
   The response for the agent to give when it is cut off mid-response.
 </ParamField>
 
-
 # `ChatGPTAgentConfig`
 
 <ParamField body="prompt_preamble" type="str">
-  The preamble text to prepend before the prompt when generating responses. This allows priming the model.
+  The preamble text to prepend before the prompt when generating responses. This
+  allows priming the model.
 </ParamField>
 
 <ParamField body="expected_first_prompt" type="Optional[str]">
-  The prompt to use for generating the first response from the agent. If not provided, the agent will generate a response to the first user message without any initial prompt.
+  The prompt to use for generating the first response from the agent. If not
+  provided, the agent will generate a response to the first user message without
+  any initial prompt.
 </ParamField>
 
 <ParamField body="model_name" type="str">
@@ -83,7 +88,9 @@ title: "Agent Reference"
 </ParamField>
 
 <ParamField body="temperature" type="float">
-  The sampling temperature to use for the model. Higher values means the model will take more risks. Try 0.9 for more creative applications, and 0 for ones with a well-defined answer.
+  The sampling temperature to use for the model. Higher values means the model
+  will take more risks. Try 0.9 for more creative applications, and 0 for ones
+  with a well-defined answer.
 </ParamField>
 
 <ParamField body="max_tokens" type="int">
@@ -99,14 +106,15 @@ title: "Agent Reference"
 </ParamField>
 
 <ParamField body="vector_db_config" type="Optional[VectorDBConfig]">
-  Configuration for hitting a vector database for retrieval before generating a response.
+  Configuration for hitting a vector database for retrieval before generating a
+  response.
 </ParamField>
-
 
 # `ChatAnthropicAgentConfig`
 
 <ParamField body="prompt_preamble" type="str">
-  The preamble text to prepend before the prompt when generating responses. This allows priming the model.
+  The preamble text to prepend before the prompt when generating responses. This
+  allows priming the model.
 </ParamField>
 
 <ParamField body="model_name" type="str">
@@ -117,11 +125,11 @@ title: "Agent Reference"
   Max tokens to sample for autocompletion stream. Defaults to 200.
 </ParamField>
 
-
 # `ChatVertexAIAgentConfig`
 
 <ParamField body="prompt_preamble" type="str">
-  The preamble text to prepend before the prompt when generating responses. This allows priming the model.
+  The preamble text to prepend before the prompt when generating responses. This
+  allows priming the model.
 </ParamField>
 
 <ParamField body="model_name" type="str">
@@ -129,20 +137,20 @@ title: "Agent Reference"
 </ParamField>
 
 <ParamField body="generate_responses" type="bool">
-  Whether the agent should generate responses continuously (True) or only respond once per human input (False).
-  Google Vertex AI doesn't support streaming, set to False
+  Whether the agent should generate responses continuously (True) or only
+  respond once per human input (False). Google Vertex AI doesn't support
+  streaming, set to False
 </ParamField>
-
 
 # `EchoAgentConfig`
 
 The EchoAgent simply echoes back the user's messages. It does not take any configuration parameters.
 
-
 # `GPT4AllAgentConfig`
 
 <ParamField body="prompt_preamble" type="str">
-  The preamble text to prepend before the prompt when generating responses. This allows priming the model.
+  The preamble text to prepend before the prompt when generating responses. This
+  allows priming the model.
 </ParamField>
 
 <ParamField body="model_path" type="str">
@@ -150,14 +158,15 @@ The EchoAgent simply echoes back the user's messages. It does not take any confi
 </ParamField>
 
 <ParamField body="generate_responses" type="bool">
-  Whether the agent should generate responses continuously (True) or only respond once per human input (False).
+  Whether the agent should generate responses continuously (True) or only
+  respond once per human input (False).
 </ParamField>
-
 
 # `LlamacppAgentConfig`
 
 <ParamField body="prompt_preamble" type="str">
-  The preamble text to prepend before the prompt when generating responses. This allows priming the model.
+  The preamble text to prepend before the prompt when generating responses. This
+  allows priming the model.
 </ParamField>
 
 <ParamField body="llamacpp_kwargs" type="dict">
@@ -165,9 +174,10 @@ The EchoAgent simply echoes back the user's messages. It does not take any confi
 </ParamField>
 
 <ParamField body="prompt_template" type="Optional[Union[PromptTemplate, str]]">
-  The template to use for formatting the prompt with the conversation history and current user input. Can be a string referring to a built-in template like "alpaca", or a custom PromptTemplate.
+  The template to use for formatting the prompt with the conversation history
+  and current user input. Can be a string referring to a built-in template like
+  "alpaca", or a custom PromptTemplate.
 </ParamField>
-
 
 # `InformationRetrievalAgentConfig`
 
@@ -180,20 +190,22 @@ The EchoAgent simply echoes back the user's messages. It does not take any confi
 </ParamField>
 
 <ParamField body="goal_description" type="str">
-  A description of the goal or task that the agent is trying to accomplish, to provide context for the information retrieval.
+  A description of the goal or task that the agent is trying to accomplish, to
+  provide context for the information retrieval.
 </ParamField>
 
 <ParamField body="fields" type="str">
   A list of the information fields the agent is trying to collect.
 </ParamField>
 
-
 # `RESTfulUserImplementedAgentConfig`
 
 <ParamField body="respond" type="RESTfulEndpointConfig">
-  Configuration for the REST endpoint to hit to get responses from the user implemented agent.
+  Configuration for the REST endpoint to hit to get responses from the user
+  implemented agent.
 </ParamField>
 
 <ParamField body="generate_responses" type="bool">
-  Whether the agent should generate responses continuously (True) or only respond once per human input (False).
+  Whether the agent should generate responses continuously (True) or only
+  respond once per human input (False).
 </ParamField>

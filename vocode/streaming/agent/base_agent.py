@@ -20,6 +20,7 @@ from vocode.streaming.action.phone_call_action import (
     TwilioPhoneConversationAction,
     VonagePhoneConversationAction,
 )
+from vocode.streaming.agent.agent_response import AgentResponse
 from vocode.streaming.agent.goodbye import is_goodbye_simple
 from vocode.streaming.agent.phrase_trigger import matches_phrase_trigger
 from vocode.streaming.models.actions import (
@@ -86,15 +87,6 @@ class ActionResultAgentInput(AgentInput, type=AgentInputType.ACTION_RESULT.value
     action_input: ActionInput
     action_output: ActionOutput
     is_quiet: bool = False
-
-
-class AgentResponse(BaseModel):
-    message: Union[BaseMessage, EndOfTurn]
-    is_interruptible: bool = True
-    # Whether the message is the first message in the response; has metrics implications
-    is_first: bool = False
-    # If the response is not being chunked up into multiple sentences, this is set to True
-    is_sole_text_chunk: bool = False
 
 
 class GeneratedResponse(BaseModel):
@@ -286,16 +278,6 @@ class RespondAgent(BaseAgent[AgentConfigType]):
             elif isinstance(generated_response.message, EndOfTurn):
                 end_of_turn_agent_response_tracker = agent_response_tracker
 
-            if self.agent_config.end_conversation_on_goodbye and isinstance(
-                generated_response.message,
-                BaseMessage,
-            ):
-                if is_goodbye_simple(
-                    message=generated_response.message.text,
-                    phrases=self.agent_config.goodbye_phrases,
-                ):
-                    logger.debug("Simple goodbye detected, ending conversation")
-                    return True
             is_first_response_of_turn = False
 
         # if the client (the implemented agent) doesn't create an EndOfTurn, then we need to create one

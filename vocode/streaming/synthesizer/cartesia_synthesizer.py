@@ -6,11 +6,13 @@ from vocode import getenv
 from vocode.streaming.models.audio import AudioEncoding, SamplingRate
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.synthesizer import CartesiaSynthesizerConfig
-from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer, SynthesisResult
+from vocode.streaming.synthesizer.abstract_synthesizer import AbstractSynthesizer
+from vocode.streaming.synthesizer.synthesis_result import SynthesisResult
+from vocode.streaming.synthesizer.synthesizer_utils import create_synthesis_result_from_wav
 from vocode.streaming.utils.create_task import asyncio_create_task_with_done_error_log
 
 
-class CartesiaSynthesizer(BaseSynthesizer[CartesiaSynthesizerConfig]):
+class CartesiaSynthesizer(AbstractSynthesizer[CartesiaSynthesizerConfig]):
     def __init__(
         self,
         synthesizer_config: CartesiaSynthesizerConfig,
@@ -85,7 +87,7 @@ class CartesiaSynthesizer(BaseSynthesizer[CartesiaSynthesizerConfig]):
                 wav_file.writeframes(chunk["audio"])
         audio_file.seek(0)
 
-        result = self.create_synthesis_result_from_wav(
+        result = create_synthesis_result_from_wav(
             synthesizer_config=self.synthesizer_config,
             file=audio_file,
             message=message,

@@ -96,7 +96,6 @@ class AgentConfig(TypedModel, type=AgentType.BASE.value):  # type: ignore
     allowed_idle_time_seconds: Optional[float] = None
     num_check_human_present_times: int = 0
     allow_agent_to_be_cut_off: bool = True
-    end_conversation_on_goodbye: bool = False
     send_filler_audio: Union[bool, FillerAudioConfig] = False
     webhook_config: Optional[WebhookConfig] = None
     actions: Optional[List[ActionConfig]] = None

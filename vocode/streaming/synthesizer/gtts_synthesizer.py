@@ -2,15 +2,18 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 
+from vocode.streaming.synthesizer.synthesis_result import SynthesisResult
+from vocode.streaming.synthesizer.synthesizer_utils import create_synthesis_result_from_wav
+
 from gtts import gTTS
 from pydub import AudioSegment
 
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.synthesizer import GTTSSynthesizerConfig
-from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer, SynthesisResult
+from vocode.streaming.synthesizer.abstract_synthesizer import AbstractSynthesizer
 
 
-class GTTSSynthesizer(BaseSynthesizer):
+class GTTSSynthesizer(AbstractSynthesizer):
     def __init__(
         self,
         synthesizer_config: GTTSSynthesizerConfig,
@@ -39,7 +42,7 @@ class GTTSSynthesizer(BaseSynthesizer):
         output_bytes_io = BytesIO()
         audio_segment.export(output_bytes_io, format="wav")  # type: ignore
 
-        result = self.create_synthesis_result_from_wav(
+        result = create_synthesis_result_from_wav(
             synthesizer_config=self.synthesizer_config,
             file=output_bytes_io,
             message=message,

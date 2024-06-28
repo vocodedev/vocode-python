@@ -8,7 +8,7 @@ from sentry_sdk.tracing import Span, Transaction, _SpanRecorder
 from vocode import get_serialized_ctx_wrappers, sentry_transaction
 
 if TYPE_CHECKING:
-    from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer
+    from vocode.streaming.synthesizer.abstract_synthesizer import AbstractSynthesizer
 
 _SYNTHESIZER_NAMES = {
     "AzureSynthesizer": "azure",
@@ -155,7 +155,7 @@ def sentry_configured(func):
 
 
 def synthesizer_base_name_if_should_report_to_sentry(
-    synthesizer: "BaseSynthesizer",
+    synthesizer: "AbstractSynthesizer",
 ) -> Optional[str]:
     """Returns a synthesizer name if we should report metrics to Sentry for this
     kind of synthesizer; else returns None.

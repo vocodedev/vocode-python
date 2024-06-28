@@ -25,13 +25,8 @@ from loguru import logger
 from sentry_sdk.tracing import Span
 
 from vocode.streaming.action.worker import ActionsWorker
-from vocode.streaming.agent.base_agent import (
-    AgentInput,
-    AgentResponse,
-    AgentResponse,
-    BaseAgent,
-    TranscriptionAgentInput,
-)
+from vocode.streaming.agent.agent_response import AgentResponse
+from vocode.streaming.agent.base_agent import AgentResponse, BaseAgent, TranscriptionAgentInput
 from vocode.streaming.agent.chat_gpt_agent import ChatGPTAgent
 from vocode.streaming.constants import (
     ALLOWED_IDLE_TIME,
@@ -46,12 +41,12 @@ from vocode.streaming.models.transcriber import TranscriberConfig, Transcription
 from vocode.streaming.models.transcript import Message, Transcript, TranscriptCompleteEvent
 from vocode.streaming.output_device.abstract_output_device import AbstractOutputDevice
 from vocode.streaming.output_device.audio_chunk import AudioChunk, ChunkState
-from vocode.streaming.synthesizer.base_synthesizer import (
-    BaseSynthesizer,
-    FillerAudio,
-    SynthesisResult,
+from vocode.streaming.synthesizer.abstract_input_streaming_synthesizer import (
+    AbstractInputStreamingSynthesizer,
 )
-from vocode.streaming.synthesizer.input_streaming_synthesizer import InputStreamingSynthesizer
+from vocode.streaming.synthesizer.abstract_synthesizer import AbstractSynthesizer
+from vocode.streaming.synthesizer.filler_audio import FillerAudio
+from vocode.streaming.synthesizer.synthesis_result import SynthesisResult
 from vocode.streaming.transcriber.base_transcriber import BaseTranscriber
 from vocode.streaming.transcriber.deepgram_transcriber import DeepgramTranscriber
 from vocode.streaming.utils import (
@@ -436,7 +431,7 @@ class StreamingConversation(Generic[OutputDeviceType]):
         output_device: OutputDeviceType,
         transcriber: BaseTranscriber[TranscriberConfig],
         agent: BaseAgent,
-        synthesizer: BaseSynthesizer,
+        synthesizer: AbstractSynthesizer,
         speed_coefficient: float = 1.0,
         conversation_id: Optional[str] = None,
         events_manager: Optional[EventsManager] = None,

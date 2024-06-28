@@ -4,6 +4,11 @@ import base64
 from typing import AsyncGenerator, List, Optional, Tuple
 
 import numpy as np
+from vocode.streaming.synthesizer.synthesis_result import SynthesisResult
+from vocode.streaming.synthesizer.synthesizer_utils import (
+    chunk_result_generator_from_queue,
+    resample_chunk,
+)
 import websockets
 from loguru import logger
 from pydantic import BaseModel, conint
@@ -11,9 +16,11 @@ from pydantic import BaseModel, conint
 from vocode.streaming.models.audio import AudioEncoding, SamplingRate
 from vocode.streaming.models.message import BaseMessage, BotBackchannel, LLMToken
 from vocode.streaming.models.synthesizer import ElevenLabsSynthesizerConfig
-from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer, SynthesisResult
+from vocode.streaming.synthesizer.abstract_synthesizer import AbstractSynthesizer
 from vocode.streaming.synthesizer.eleven_labs_synthesizer import ElevenLabsSynthesizer
-from vocode.streaming.synthesizer.input_streaming_synthesizer import InputStreamingSynthesizer
+from vocode.streaming.synthesizer.abstract_input_streaming_synthesizer import (
+    AbstractInputStreamingSynthesizer,
+)
 
 NONCE = "071b5f21-3b24-4427-817e-62508007ae60"
 ELEVEN_LABS_BASE_URL = "wss://api.elevenlabs.io/v1/"
@@ -77,7 +84,7 @@ class ElevenLabsWebsocketResponse(BaseModel):
 
 
 class ElevenLabsWSSynthesizer(
-    BaseSynthesizer[ElevenLabsSynthesizerConfig], InputStreamingSynthesizer
+    AbstractInputStreamingSynthesizer[ElevenLabsSynthesizerConfig],
 ):
     def __init__(
         self,
@@ -227,7 +234,7 @@ class ElevenLabsWSSynthesizer(
                         )
 
                         if self.upsample:
-                            decoded = self._resample_chunk(
+                            decoded = resample_chunk(
                                 decoded,
                                 self.sample_rate,
                                 self.upsample,
@@ -266,7 +273,7 @@ class ElevenLabsWSSynthesizer(
 
     def get_current_utterance_synthesis_result(self):
         return SynthesisResult(
-            self.chunk_result_generator_from_queue(self.voice_packet_queue),
+            chunk_result_generator_from_queue(self.voice_packet_queue),
             lambda seconds: self.get_current_message_so_far(seconds),
         )
 
@@ -347,6 +354,7 @@ class ElevenLabsWSSynthesizer(
         self.end_of_turn = True
         await self.text_chunk_queue.put(None)
         self.current_turn_utterances_by_chunk = []
+        await super().handle_end_of_turn()
 
     async def cancel_websocket_tasks(self):
         self._cleanup_websocket_tasks()
