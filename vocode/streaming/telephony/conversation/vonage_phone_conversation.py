@@ -100,7 +100,7 @@ class VonagePhoneConversation(AbstractPhoneConversation[VonageOutputDevice]):
             )
         )
         disconnected = False
-        while self.active:
+        while self.is_active():
             try:
                 message = await ws.receive()
                 if message["type"] == "websocket.disconnect":
