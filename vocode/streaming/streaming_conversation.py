@@ -62,6 +62,7 @@ from vocode.streaming.utils import (
     enumerate_async_iter,
     get_chunk_size_per_second,
 )
+from vocode.streaming.utils.audio_pipeline import AudioPipeline, OutputDeviceType
 from vocode.streaming.utils.create_task import asyncio_create_task_with_done_error_log
 from vocode.streaming.utils.events_manager import EventsManager
 from vocode.streaming.utils.speed_manager import SpeedManager
@@ -108,10 +109,7 @@ BACKCHANNEL_PATTERNS = [
 LOW_INTERRUPT_SENSITIVITY_BACKCHANNEL_UTTERANCE_LENGTH_THRESHOLD = 3
 
 
-OutputDeviceType = TypeVar("OutputDeviceType", bound=AbstractOutputDevice)
-
-
-class StreamingConversation(Generic[OutputDeviceType]):
+class StreamingConversation(AudioPipeline[OutputDeviceType]):
     class QueueingInterruptibleEventFactory(InterruptibleEventFactory):
         def __init__(self, conversation: "StreamingConversation"):
             self.conversation = conversation

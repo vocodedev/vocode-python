@@ -13,12 +13,12 @@ from vocode.streaming.output_device.twilio_output_device import (
     ChunkFinishedMarkMessage,
     TwilioOutputDevice,
 )
-from vocode.streaming.streaming_conversation import StreamingConversation
 from vocode.streaming.telephony.client.twilio_client import TwilioClient
 from vocode.streaming.telephony.config_manager.base_config_manager import BaseConfigManager
 from vocode.streaming.telephony.conversation.abstract_phone_conversation import (
     AbstractPhoneConversation,
 )
+from vocode.streaming.utils.audio_pipeline import AudioPipeline
 from vocode.streaming.utils.state_manager import TwilioPhoneConversationStateManager
 
 
@@ -36,7 +36,7 @@ class TwilioPhoneConversation(AbstractPhoneConversation[TwilioOutputDevice]):
         to_phone: str,
         base_url: str,
         config_manager: BaseConfigManager,
-        pipeline: StreamingConversation[TwilioOutputDevice],
+        pipeline: AudioPipeline[TwilioOutputDevice],
         twilio_sid: str,
         twilio_config: Optional[TwilioConfig] = None,
         record_call: bool = False,

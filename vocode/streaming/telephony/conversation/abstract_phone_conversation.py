@@ -12,11 +12,11 @@ from vocode.streaming.models.telephony import PhoneCallDirection
 from vocode.streaming.models.transcriber import TranscriberConfig
 from vocode.streaming.output_device.twilio_output_device import TwilioOutputDevice
 from vocode.streaming.output_device.vonage_output_device import VonageOutputDevice
-from vocode.streaming.streaming_conversation import StreamingConversation
 from vocode.streaming.synthesizer.abstract_factory import AbstractSynthesizerFactory
 from vocode.streaming.telephony.config_manager.base_config_manager import BaseConfigManager
 from vocode.streaming.transcriber.abstract_factory import AbstractTranscriberFactory
 from vocode.streaming.utils import create_conversation_id
+from vocode.streaming.utils.audio_pipeline import AudioPipeline
 from vocode.streaming.utils.events_manager import EventsManager
 
 TelephonyOutputDeviceType = TypeVar(
@@ -30,7 +30,6 @@ TelephonyProvider = Literal["twilio", "vonage"]
 
 class AbstractPhoneConversation(Generic[TelephonyOutputDeviceType]):
     telephony_provider: TelephonyProvider
-    pipeline: StreamingConversation[TelephonyOutputDeviceType]
 
     def __init__(
         self,
@@ -39,7 +38,7 @@ class AbstractPhoneConversation(Generic[TelephonyOutputDeviceType]):
         to_phone: str,
         base_url: str,
         config_manager: BaseConfigManager,
-        pipeline: StreamingConversation[TelephonyOutputDeviceType],
+        pipeline: AudioPipeline[TelephonyOutputDeviceType],
     ):
         self.direction = direction
         self.from_phone = from_phone
