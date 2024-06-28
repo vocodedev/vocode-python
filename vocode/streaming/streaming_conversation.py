@@ -24,6 +24,7 @@ import sentry_sdk
 from loguru import logger
 from sentry_sdk.tracing import Span
 
+from vocode import conversation_id as ctx_conversation_id
 from vocode.streaming.action.worker import ActionsWorker
 from vocode.streaming.agent.base_agent import (
     AgentInput,
@@ -593,6 +594,8 @@ class StreamingConversation(Generic[OutputDeviceType]):
         events_manager: Optional[EventsManager] = None,
     ):
         self.id = conversation_id or create_conversation_id()
+        ctx_conversation_id.set(self.id)
+
         self.output_device = output_device
         self.transcriber = transcriber
         self.agent = agent

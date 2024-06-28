@@ -121,7 +121,7 @@ class PhoneConversationStateManager(
     AbstractPhoneConversationStateManager, ConversationStateManager
 ):
     def __init__(self, conversation: "AbstractPhoneConversation"):
-        ConversationStateManager.__init__(self, conversation)
+        ConversationStateManager.__init__(self, conversation.pipeline)
         self._phone_conversation = conversation
 
     def get_config_manager(self):
