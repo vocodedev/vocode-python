@@ -7,12 +7,12 @@ from loguru import logger
 from vocode.streaming.models.events import PhoneCallConnectedEvent
 from vocode.streaming.models.telephony import PhoneCallDirection, VonageConfig
 from vocode.streaming.output_device.vonage_output_device import VonageOutputDevice
+from vocode.streaming.pipeline.audio_pipeline import AudioPipeline
 from vocode.streaming.telephony.client.vonage_client import VonageClient
 from vocode.streaming.telephony.config_manager.base_config_manager import BaseConfigManager
 from vocode.streaming.telephony.conversation.abstract_phone_conversation import (
     AbstractPhoneConversation,
 )
-from vocode.streaming.utils.audio_pipeline import AudioPipeline
 from vocode.streaming.utils.state_manager import VonagePhoneConversationStateManager
 
 KOALA_CHUNK_SIZE = 512  # 16 bit samples, size 256

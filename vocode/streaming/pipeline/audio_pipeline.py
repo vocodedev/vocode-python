@@ -2,8 +2,8 @@ from abc import abstractmethod
 from typing import Generic, TypeVar
 
 from vocode.streaming.output_device.abstract_output_device import AbstractOutputDevice
+from vocode.streaming.pipeline.worker import AbstractWorker
 from vocode.streaming.utils.events_manager import EventsManager
-from vocode.streaming.utils.worker import AbstractWorker
 
 OutputDeviceType = TypeVar("OutputDeviceType", bound=AbstractOutputDevice)
 

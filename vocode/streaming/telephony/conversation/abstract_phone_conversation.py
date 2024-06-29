@@ -12,11 +12,11 @@ from vocode.streaming.models.telephony import PhoneCallDirection
 from vocode.streaming.models.transcriber import TranscriberConfig
 from vocode.streaming.output_device.twilio_output_device import TwilioOutputDevice
 from vocode.streaming.output_device.vonage_output_device import VonageOutputDevice
+from vocode.streaming.pipeline.audio_pipeline import AudioPipeline
 from vocode.streaming.synthesizer.abstract_factory import AbstractSynthesizerFactory
 from vocode.streaming.telephony.config_manager.base_config_manager import BaseConfigManager
 from vocode.streaming.transcriber.abstract_factory import AbstractTranscriberFactory
 from vocode.streaming.utils import create_conversation_id
-from vocode.streaming.utils.audio_pipeline import AudioPipeline
 from vocode.streaming.utils.events_manager import EventsManager
 
 TelephonyOutputDeviceType = TypeVar(

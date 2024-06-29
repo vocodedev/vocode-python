@@ -18,12 +18,12 @@ from vocode.streaming.models.agent import ChatGPTAgentConfig
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.transcriber import Transcription
 from vocode.streaming.models.transcript import Transcript
-from vocode.streaming.utils.state_manager import ConversationStateManager
-from vocode.streaming.utils.worker import (
+from vocode.streaming.pipeline.worker import (
     InterruptibleAgentResponseEvent,
     InterruptibleEvent,
     QueueConsumer,
 )
+from vocode.streaming.utils.state_manager import ConversationStateManager
 
 
 @pytest.fixture(autouse=True)

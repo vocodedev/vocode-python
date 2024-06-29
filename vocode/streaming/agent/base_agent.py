@@ -35,15 +35,15 @@ from vocode.streaming.models.message import BaseMessage, BotBackchannel, Silence
 from vocode.streaming.models.model import TypedModel
 from vocode.streaming.models.transcriber import Transcription
 from vocode.streaming.models.transcript import Message, Transcript
-from vocode.streaming.utils import unrepeating_randomizer
-from vocode.streaming.utils.speed_manager import SpeedManager
-from vocode.streaming.utils.worker import (
+from vocode.streaming.pipeline.worker import (
     AbstractWorker,
     InterruptibleAgentResponseEvent,
     InterruptibleEvent,
     InterruptibleEventFactory,
     InterruptibleWorker,
 )
+from vocode.streaming.utils import unrepeating_randomizer
+from vocode.streaming.utils.speed_manager import SpeedManager
 from vocode.utils.sentry_utils import CustomSentrySpans, sentry_create_span
 
 if TYPE_CHECKING:

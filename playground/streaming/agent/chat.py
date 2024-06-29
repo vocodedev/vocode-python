@@ -20,8 +20,8 @@ from vocode.streaming.models.actions import (
 from vocode.streaming.models.agent import ChatGPTAgentConfig
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.transcript import Transcript
+from vocode.streaming.pipeline.worker import InterruptibleAgentResponseEvent, QueueConsumer
 from vocode.streaming.utils.state_manager import AbstractConversationStateManager
-from vocode.streaming.utils.worker import InterruptibleAgentResponseEvent, QueueConsumer
 
 load_dotenv()
 

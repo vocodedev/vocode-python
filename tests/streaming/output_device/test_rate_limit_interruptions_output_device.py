@@ -7,7 +7,7 @@ from vocode.streaming.output_device.audio_chunk import AudioChunk, ChunkState
 from vocode.streaming.output_device.rate_limit_interruptions_output_device import (
     RateLimitInterruptionsOutputDevice,
 )
-from vocode.streaming.utils.worker import InterruptibleEvent
+from vocode.streaming.pipeline.worker import InterruptibleEvent
 
 
 class DummyRateLimitInterruptionsOutputDevice(RateLimitInterruptionsOutputDevice):

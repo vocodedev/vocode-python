@@ -10,13 +10,13 @@ from vocode.streaming.models.actions import (
     TwilioPhoneConversationActionInput,
     VonagePhoneConversationActionInput,
 )
-from vocode.streaming.utils.state_manager import AbstractConversationStateManager
-from vocode.streaming.utils.worker import (
+from vocode.streaming.pipeline.worker import (
     AbstractWorker,
     InterruptibleEvent,
     InterruptibleEventFactory,
     InterruptibleWorker,
 )
+from vocode.streaming.utils.state_manager import AbstractConversationStateManager
 
 
 class ActionsWorker(InterruptibleWorker):

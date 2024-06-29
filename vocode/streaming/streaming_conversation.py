@@ -26,6 +26,7 @@ from sentry_sdk.tracing import Span
 
 from vocode import conversation_id as ctx_conversation_id
 from vocode.streaming.action.worker import ActionsWorker
+from vocode.streaming.agent.abstract_factory import AbstractAgentFactory
 from vocode.streaming.agent.base_agent import (
     AgentInput,
     AgentResponse,
@@ -36,38 +37,26 @@ from vocode.streaming.agent.base_agent import (
     TranscriptionAgentInput,
 )
 from vocode.streaming.agent.chat_gpt_agent import ChatGPTAgent
+from vocode.streaming.agent.default_factory import DefaultAgentFactory
 from vocode.streaming.constants import (
     ALLOWED_IDLE_TIME,
     CHECK_HUMAN_PRESENT_MESSAGE_CHOICES,
     TEXT_TO_SPEECH_CHUNK_SIZE_SECONDS,
 )
 from vocode.streaming.models.actions import EndOfTurn
-from vocode.streaming.models.agent import FillerAudioConfig
+from vocode.streaming.models.agent import AgentConfig, FillerAudioConfig
 from vocode.streaming.models.events import Sender
 from vocode.streaming.models.message import BaseMessage, BotBackchannel, LLMToken, SilenceMessage
+from vocode.streaming.models.model import BaseModel
+from vocode.streaming.models.pipeline import StreamingConversationConfig
+from vocode.streaming.models.synthesizer import SynthesizerConfig
 from vocode.streaming.models.transcriber import TranscriberConfig, Transcription
 from vocode.streaming.models.transcript import Message, Transcript, TranscriptCompleteEvent
 from vocode.streaming.output_device.abstract_output_device import AbstractOutputDevice
 from vocode.streaming.output_device.audio_chunk import AudioChunk, ChunkState
-from vocode.streaming.synthesizer.base_synthesizer import (
-    BaseSynthesizer,
-    FillerAudio,
-    SynthesisResult,
-)
-from vocode.streaming.synthesizer.input_streaming_synthesizer import InputStreamingSynthesizer
-from vocode.streaming.transcriber.base_transcriber import BaseTranscriber
-from vocode.streaming.transcriber.deepgram_transcriber import DeepgramTranscriber
-from vocode.streaming.utils import (
-    create_conversation_id,
-    enumerate_async_iter,
-    get_chunk_size_per_second,
-)
-from vocode.streaming.utils.audio_pipeline import AudioPipeline, OutputDeviceType
-from vocode.streaming.utils.create_task import asyncio_create_task_with_done_error_log
-from vocode.streaming.utils.events_manager import EventsManager
-from vocode.streaming.utils.speed_manager import SpeedManager
-from vocode.streaming.utils.state_manager import ConversationStateManager
-from vocode.streaming.utils.worker import (
+from vocode.streaming.pipeline.abstract_pipeline_factory import AbstractPipelineFactory
+from vocode.streaming.pipeline.audio_pipeline import AudioPipeline, OutputDeviceType
+from vocode.streaming.pipeline.worker import (
     AbstractWorker,
     AsyncQueueWorker,
     InterruptibleAgentResponseEvent,
@@ -76,6 +65,27 @@ from vocode.streaming.utils.worker import (
     InterruptibleEventFactory,
     InterruptibleWorker,
 )
+from vocode.streaming.synthesizer.abstract_factory import AbstractSynthesizerFactory
+from vocode.streaming.synthesizer.base_synthesizer import (
+    BaseSynthesizer,
+    FillerAudio,
+    SynthesisResult,
+)
+from vocode.streaming.synthesizer.default_factory import DefaultSynthesizerFactory
+from vocode.streaming.synthesizer.input_streaming_synthesizer import InputStreamingSynthesizer
+from vocode.streaming.transcriber.abstract_factory import AbstractTranscriberFactory
+from vocode.streaming.transcriber.base_transcriber import BaseTranscriber
+from vocode.streaming.transcriber.deepgram_transcriber import DeepgramTranscriber
+from vocode.streaming.transcriber.default_factory import DefaultTranscriberFactory
+from vocode.streaming.utils import (
+    create_conversation_id,
+    enumerate_async_iter,
+    get_chunk_size_per_second,
+)
+from vocode.streaming.utils.create_task import asyncio_create_task_with_done_error_log
+from vocode.streaming.utils.events_manager import EventsManager
+from vocode.streaming.utils.speed_manager import SpeedManager
+from vocode.streaming.utils.state_manager import ConversationStateManager
 from vocode.utils.sentry_utils import (
     CustomSentrySpans,
     complete_span_by_op,
@@ -107,6 +117,35 @@ BACKCHANNEL_PATTERNS = [
     "makes sense",
 ]
 LOW_INTERRUPT_SENSITIVITY_BACKCHANNEL_UTTERANCE_LENGTH_THRESHOLD = 3
+
+
+class StreamingConversationFactory(AbstractPipelineFactory[StreamingConversationConfig]):
+
+    def __init__(
+        self,
+        transcriber_factory: AbstractTranscriberFactory = DefaultTranscriberFactory(),
+        agent_factory: AbstractAgentFactory = DefaultAgentFactory(),
+        synthesizer_factory: AbstractSynthesizerFactory = DefaultSynthesizerFactory(),
+    ):
+        self.transcriber_factory = transcriber_factory
+        self.agent_factory = agent_factory
+        self.synthesizer_factory = synthesizer_factory
+
+    def create_pipeline(
+        self,
+        config: StreamingConversationConfig,
+        output_device: OutputDeviceType,
+        id: Optional[str] = None,
+        events_manager: Optional[EventsManager] = None,
+    ):
+        return StreamingConversation(
+            output_device=output_device,
+            transcriber=self.transcriber_factory.create_transcriber(config.transcriber_config),
+            agent=self.agent_factory.create_agent(config.agent_config),
+            synthesizer=self.synthesizer_factory.create_synthesizer(config.synthesizer_config),
+            conversation_id=id,
+            events_manager=events_manager,
+        )
 
 
 class StreamingConversation(AudioPipeline[OutputDeviceType]):
@@ -801,8 +840,8 @@ class StreamingConversation(AudioPipeline[OutputDeviceType]):
         )
         self.transcriptions_worker.consume_nonblocking(transcription)
 
-    def receive_audio(self, chunk: bytes):
-        self.transcriber.send_audio(chunk)
+    def consume_nonblocking(self, item: bytes):
+        self.transcriber.send_audio(item)
 
     def warmup_synthesizer(self):
         self.synthesizer.ready_synthesizer(self._get_synthesizer_chunk_size())

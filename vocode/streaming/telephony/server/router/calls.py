@@ -7,7 +7,12 @@ from loguru import logger
 from vocode import sentry_transaction
 from vocode.streaming.agent.abstract_factory import AbstractAgentFactory
 from vocode.streaming.agent.default_factory import DefaultAgentFactory
+from vocode.streaming.models.pipeline import PipelineConfig
 from vocode.streaming.models.telephony import BaseCallConfig, TwilioCallConfig, VonageCallConfig
+from vocode.streaming.output_device.twilio_output_device import TwilioOutputDevice
+from vocode.streaming.output_device.vonage_output_device import VonageOutputDevice
+from vocode.streaming.pipeline.abstract_pipeline_factory import AbstractPipelineFactory
+from vocode.streaming.streaming_conversation import StreamingConversationFactory
 from vocode.streaming.synthesizer.abstract_factory import AbstractSynthesizerFactory
 from vocode.streaming.synthesizer.default_factory import DefaultSynthesizerFactory
 from vocode.streaming.telephony.config_manager.base_config_manager import BaseConfigManager
@@ -31,17 +36,13 @@ class CallsRouter(BaseRouter):
         self,
         base_url: str,
         config_manager: BaseConfigManager,
-        transcriber_factory: AbstractTranscriberFactory = DefaultTranscriberFactory(),
-        agent_factory: AbstractAgentFactory = DefaultAgentFactory(),
-        synthesizer_factory: AbstractSynthesizerFactory = DefaultSynthesizerFactory(),
+        pipeline_factory: AbstractPipelineFactory = StreamingConversationFactory(),
         events_manager: Optional[EventsManager] = None,
     ):
         super().__init__()
         self.base_url = base_url
         self.config_manager = config_manager
-        self.transcriber_factory = transcriber_factory
-        self.agent_factory = agent_factory
-        self.synthesizer_factory = synthesizer_factory
+        self.pipeline_factory = pipeline_factory
         self.events_manager = events_manager
         self.router = APIRouter()
         self.router.websocket("/connect_call/{id}")(self.connect_call)
@@ -52,9 +53,7 @@ class CallsRouter(BaseRouter):
         call_config: BaseCallConfig,
         config_manager: BaseConfigManager,
         conversation_id: str,
-        transcriber_factory: AbstractTranscriberFactory = DefaultTranscriberFactory(),
-        agent_factory: AbstractAgentFactory = DefaultAgentFactory(),
-        synthesizer_factory: AbstractSynthesizerFactory = DefaultSynthesizerFactory(),
+        pipeline_factory: AbstractPipelineFactory = StreamingConversationFactory(),
         events_manager: Optional[EventsManager] = None,
     ) -> AbstractPhoneConversation:
         if isinstance(call_config, TwilioCallConfig):
@@ -63,17 +62,15 @@ class CallsRouter(BaseRouter):
                 from_phone=call_config.from_phone,
                 base_url=base_url,
                 config_manager=config_manager,
-                agent_config=call_config.agent_config,
-                transcriber_config=call_config.transcriber_config,
-                synthesizer_config=call_config.synthesizer_config,
                 twilio_config=call_config.twilio_config,
                 twilio_sid=call_config.twilio_sid,
-                conversation_id=conversation_id,
-                transcriber_factory=transcriber_factory,
-                agent_factory=agent_factory,
-                synthesizer_factory=synthesizer_factory,
-                events_manager=events_manager,
                 direction=call_config.direction,
+                pipeline=pipeline_factory.create_pipeline(
+                    config=call_config.pipeline_config,
+                    output_device=TwilioOutputDevice(),
+                    id=conversation_id,
+                    events_manager=events_manager,
+                ),
             )
         elif isinstance(call_config, VonageCallConfig):
             return VonagePhoneConversation(
@@ -81,18 +78,17 @@ class CallsRouter(BaseRouter):
                 from_phone=call_config.from_phone,
                 base_url=base_url,
                 config_manager=config_manager,
-                agent_config=call_config.agent_config,
-                transcriber_config=call_config.transcriber_config,
-                synthesizer_config=call_config.synthesizer_config,
                 vonage_config=call_config.vonage_config,
                 vonage_uuid=call_config.vonage_uuid,
-                conversation_id=conversation_id,
-                transcriber_factory=transcriber_factory,
-                agent_factory=agent_factory,
-                synthesizer_factory=synthesizer_factory,
-                events_manager=events_manager,
-                output_to_speaker=call_config.output_to_speaker,
                 direction=call_config.direction,
+                pipeline=pipeline_factory.create_pipeline(
+                    config=call_config.pipeline_config,
+                    output_device=VonageOutputDevice(
+                        output_to_speaker=call_config.output_to_speaker
+                    ),
+                    id=conversation_id,
+                    events_manager=events_manager,
+                ),
             )
         else:
             raise ValueError(f"Unknown call config type {call_config.type}")
@@ -111,9 +107,7 @@ class CallsRouter(BaseRouter):
                 call_config=call_config,
                 config_manager=self.config_manager,
                 conversation_id=id,
-                transcriber_factory=self.transcriber_factory,
-                agent_factory=self.agent_factory,
-                synthesizer_factory=self.synthesizer_factory,
+                pipeline_factory=self.pipeline_factory,
                 events_manager=self.events_manager,
             )
 

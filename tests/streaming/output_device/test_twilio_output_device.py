@@ -10,7 +10,7 @@ from vocode.streaming.output_device.twilio_output_device import (
     ChunkFinishedMarkMessage,
     TwilioOutputDevice,
 )
-from vocode.streaming.utils.worker import InterruptibleEvent
+from vocode.streaming.pipeline.worker import InterruptibleEvent
 
 
 @pytest.fixture

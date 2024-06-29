@@ -7,8 +7,8 @@ from typing import Generic, Optional, TypeVar, Union
 
 from vocode.streaming.models.audio import AudioEncoding
 from vocode.streaming.models.transcriber import TranscriberConfig, Transcription
+from vocode.streaming.pipeline.worker import AbstractWorker, AsyncWorker, ThreadAsyncWorker
 from vocode.streaming.utils.speed_manager import SpeedManager
-from vocode.streaming.utils.worker import AbstractWorker, AsyncWorker, ThreadAsyncWorker
 
 TranscriberConfigType = TypeVar("TranscriberConfigType", bound=TranscriberConfig)
 

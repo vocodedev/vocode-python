@@ -9,7 +9,7 @@ from vocode.streaming.models.audio import AudioEncoding
 from vocode.streaming.output_device.rate_limit_interruptions_output_device import (
     RateLimitInterruptionsOutputDevice,
 )
-from vocode.streaming.utils.worker import ThreadAsyncWorker
+from vocode.streaming.pipeline.worker import ThreadAsyncWorker
 
 DEFAULT_SAMPLING_RATE = 44100
 

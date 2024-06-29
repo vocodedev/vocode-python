@@ -5,10 +5,10 @@ from vocode.streaming.models.synthesizer import AzureSynthesizerConfig
 from vocode.streaming.output_device.abstract_output_device import AbstractOutputDevice
 from vocode.streaming.output_device.audio_chunk import AudioChunk
 from vocode.streaming.output_device.blocking_speaker_output import BlockingSpeakerOutput
+from vocode.streaming.pipeline.worker import InterruptibleEvent
 from vocode.streaming.synthesizer.azure_synthesizer import AzureSynthesizer
 from vocode.streaming.synthesizer.base_synthesizer import BaseSynthesizer
 from vocode.streaming.utils import get_chunk_size_per_second
-from vocode.streaming.utils.worker import InterruptibleEvent
 
 if __name__ == "__main__":
     import asyncio
