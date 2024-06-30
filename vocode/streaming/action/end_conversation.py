@@ -3,7 +3,7 @@ from typing import Type
 from loguru import logger
 from pydantic.v1 import BaseModel
 
-from vocode.streaming.action.base_action import BaseAction
+from vocode.streaming.action.streaming_conversation_action import StreamingConversationAction
 from vocode.streaming.models.actions import ActionConfig as VocodeActionConfig
 from vocode.streaming.models.actions import ActionInput, ActionOutput
 
@@ -41,7 +41,7 @@ class EndConversationVocodeActionConfig(
 
 
 class EndConversation(
-    BaseAction[
+    StreamingConversationAction[
         EndConversationVocodeActionConfig,
         EndConversationParameters,
         EndConversationResponse,
@@ -73,14 +73,14 @@ class EndConversation(
         if action_input.user_message_tracker is not None:
             await action_input.user_message_tracker.wait()
 
-        if self.conversation_state_manager.transcript.was_last_message_interrupted():
+        if self.pipeline.transcript.was_last_message_interrupted():
             logger.info("Last bot message was interrupted")
             return ActionOutput(
                 action_type=action_input.action_config.type,
                 response=EndConversationResponse(success=False),
             )
 
-        await self.conversation_state_manager.terminate_conversation()
+        self.pipeline.mark_terminated()
 
         await self._end_of_run_hook()
         return ActionOutput(

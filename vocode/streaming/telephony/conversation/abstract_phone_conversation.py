@@ -4,21 +4,12 @@ from typing import TYPE_CHECKING, Generic, Literal, Optional, TypeVar, Union
 from fastapi import WebSocket
 from loguru import logger
 
-from vocode.streaming.agent.abstract_factory import AbstractAgentFactory
-from vocode.streaming.models.agent import AgentConfig
 from vocode.streaming.models.events import PhoneCallEndedEvent
-from vocode.streaming.models.synthesizer import SynthesizerConfig
 from vocode.streaming.models.telephony import PhoneCallDirection
-from vocode.streaming.models.transcriber import TranscriberConfig
 from vocode.streaming.output_device.twilio_output_device import TwilioOutputDevice
 from vocode.streaming.output_device.vonage_output_device import VonageOutputDevice
 from vocode.streaming.pipeline.audio_pipeline import AudioPipeline
-from vocode.streaming.synthesizer.abstract_factory import AbstractSynthesizerFactory
 from vocode.streaming.telephony.config_manager.base_config_manager import BaseConfigManager
-from vocode.streaming.transcriber.abstract_factory import AbstractTranscriberFactory
-from vocode.streaming.utils import create_conversation_id
-from vocode.streaming.utils.events_manager import EventsManager
-from vocode.streaming.utils.state_manager import PhoneConversationStateManager
 
 TelephonyOutputDeviceType = TypeVar(
     "TelephonyOutputDeviceType", bound=Union[TwilioOutputDevice, VonageOutputDevice]
@@ -29,9 +20,7 @@ LOW_INTERRUPT_SENSITIVITY_THRESHOLD = 0.9
 TelephonyProvider = Literal["twilio", "vonage"]
 
 
-class AbstractPhoneConversation(
-    AudioPipeline[TelephonyOutputDeviceType, PhoneConversationStateManager]
-):
+class AbstractPhoneConversation(Generic[TelephonyOutputDeviceType]):
     telephony_provider: TelephonyProvider
 
     def __init__(

@@ -26,6 +26,7 @@ from vocode.streaming.models.actions import (
     ActionConfig,
     ActionInput,
     ActionOutput,
+    ActionResponse,
     EndOfTurn,
     FunctionCall,
 )
@@ -44,14 +45,10 @@ from vocode.streaming.pipeline.worker import (
 )
 from vocode.streaming.utils import unrepeating_randomizer
 from vocode.streaming.utils.speed_manager import SpeedManager
-from vocode.streaming.utils.state_manager import (
-    TwilioPhoneConversationStateManager,
-    VonagePhoneConversationStateManager,
-)
 from vocode.utils.sentry_utils import CustomSentrySpans, sentry_create_span
 
 if TYPE_CHECKING:
-    from vocode.streaming.utils.state_manager import AbstractConversationStateManager
+    from vocode.streaming.streaming_conversation import StreamingConversation
 
 AGENT_TRACE_NAME = "agent"
 POST_QUESTION_BACKCHANNELS = [
@@ -134,6 +131,7 @@ class StreamedResponse(GeneratedResponse):
 AgentConfigType = TypeVar("AgentConfigType", bound=AgentConfig)
 
 
+# TODO: consolidate BaseAgent and AbstractAgent
 class AbstractAgent(Generic[AgentConfigType]):
     def __init__(self, agent_config: AgentConfigType):
         self.agent_config = agent_config
@@ -156,9 +154,13 @@ class AbstractAgent(Generic[AgentConfigType]):
         return random.choice(on_cut_off_messages).text
 
 
-class BaseAgent(AbstractAgent[AgentConfigType], InterruptibleWorker):
+class BaseAgent(
+    AbstractAgent[AgentConfigType],
+    InterruptibleWorker[InterruptibleEvent[AgentInput | ActionResponse]],
+):
     agent_responses_consumer: AbstractWorker[InterruptibleAgentResponseEvent[AgentResponse]]
     actions_consumer: Optional[AbstractWorker[InterruptibleEvent[ActionInput]]]
+    streaming_conversation: "StreamingConversation"
 
     def __init__(
         self,
@@ -166,7 +168,6 @@ class BaseAgent(AbstractAgent[AgentConfigType], InterruptibleWorker):
         action_factory: AbstractActionFactory = DefaultActionFactory(),
         interruptible_event_factory: InterruptibleEventFactory = InterruptibleEventFactory(),
     ):
-        self.input_queue: asyncio.Queue[InterruptibleEvent[AgentInput]] = asyncio.Queue()
         AbstractAgent.__init__(self, agent_config=agent_config)
         InterruptibleWorker.__init__(
             self,
@@ -188,12 +189,6 @@ class BaseAgent(AbstractAgent[AgentConfigType], InterruptibleWorker):
     def attach_transcript(self, transcript: Transcript):
         self.transcript = transcript
 
-    def attach_conversation_state_manager(
-        self,
-        conversation_state_manager: AbstractConversationStateManager,
-    ):
-        self.conversation_state_manager = conversation_state_manager
-
     def attach_speed_manager(self, speed_manager: SpeedManager):
         self.speed_manager = speed_manager
 
@@ -205,11 +200,6 @@ class BaseAgent(AbstractAgent[AgentConfigType], InterruptibleWorker):
 
     def set_interruptible_event_factory(self, factory: InterruptibleEventFactory):
         self.interruptible_event_factory = factory
-
-    def get_input_queue(
-        self,
-    ) -> asyncio.Queue[InterruptibleEvent[AgentInput]]:
-        return self.input_queue
 
     def is_first_response(self):
         assert self.transcript is not None
@@ -249,7 +239,7 @@ class RespondAgent(BaseAgent[AgentConfigType]):
     async def handle_generate_response(
         self,
         transcription: Transcription,
-        agent_input: AgentInput,
+        agent_input: AgentInput | ActionResponse,
     ) -> bool:
         conversation_id = agent_input.conversation_id
         responses = self._maybe_prepend_interrupt_responses(
@@ -293,7 +283,9 @@ class RespondAgent(BaseAgent[AgentConfigType]):
                 function_call = generated_response.message
                 continue
 
-            agent_response_tracker = agent_input.agent_response_tracker or asyncio.Event()
+            agent_response_tracker = (
+                agent_input.agent_response_tracker if isinstance(agent_input, AgentInput) else None
+            ) or asyncio.Event()
             self.agent_responses_consumer.consume_nonblocking(
                 self.interruptible_event_factory.create_interruptible_agent_response_event(
                     AgentResponseMessage(
@@ -325,8 +317,8 @@ class RespondAgent(BaseAgent[AgentConfigType]):
         # if the client (the implemented agent) doesn't create an EndOfTurn, then we need to create one
         if not end_of_turn_agent_response_tracker:
             end_of_turn_agent_response_tracker = (
-                agent_input.agent_response_tracker or asyncio.Event()
-            )
+                agent_input.agent_response_tracker if isinstance(agent_input, AgentInput) else None
+            ) or asyncio.Event()
             self.agent_responses_consumer.consume_nonblocking(
                 self.interruptible_event_factory.create_interruptible_agent_response_event(
                     AgentResponseMessage(
@@ -389,7 +381,7 @@ class RespondAgent(BaseAgent[AgentConfigType]):
             logger.debug("No response generated")
         return False
 
-    async def process(self, item: InterruptibleEvent[AgentInput]):
+    async def process(self, item: InterruptibleEvent[AgentInput | ActionResponse]):
         assert self.transcript is not None
         try:
             agent_input = item.payload
@@ -399,7 +391,7 @@ class RespondAgent(BaseAgent[AgentConfigType]):
                     text=transcription.message,
                     conversation_id=agent_input.conversation_id,
                 )
-            elif isinstance(agent_input, ActionResultAgentInput):
+            elif isinstance(agent_input, ActionResponse):
                 self.transcript.add_action_finish_log(
                     action_input=agent_input.action_input,
                     action_output=agent_input.action_output,
@@ -479,7 +471,9 @@ class RespondAgent(BaseAgent[AgentConfigType]):
                 return action_config
         return None
 
-    async def call_function(self, function_call: FunctionCall, agent_input: AgentInput):
+    async def call_function(
+        self, function_call: FunctionCall, agent_input: AgentInput | ActionResponse
+    ):
         action_config = self._get_action_config(function_call.name)
         if action_config is None:
             logger.error(f"Function {function_call.name} not found in agent config, skipping")
@@ -511,39 +505,15 @@ class RespondAgent(BaseAgent[AgentConfigType]):
     def create_action_input(
         self,
         action: BaseAction,
-        agent_input: AgentInput,
+        agent_input: AgentInput | ActionResponse,
         params: Dict,
         user_message_tracker: Optional[asyncio.Event] = None,
     ) -> ActionInput:
-        action_input: ActionInput
-        if isinstance(action, VonagePhoneConversationAction):
-            assert isinstance(
-                self.conversation_state_manager,
-                VonagePhoneConversationStateManager,
-            ), "Cannot use a VonagePhoneConversationAction unless the attached conversation is a VonagePhoneConversation"
-            action_input = action.create_phone_conversation_action_input(
-                conversation_id=agent_input.conversation_id,
-                params=params,
-                vonage_uuid=self.conversation_state_manager.get_vonage_uuid(),
-                user_message_tracker=user_message_tracker,
-            )
-        elif isinstance(action, TwilioPhoneConversationAction):
-            assert isinstance(
-                self.conversation_state_manager, TwilioPhoneConversationStateManager
-            ), "Cannot use a TwilioPhoneConversationAction unless the attached conversation is a TwilioPhoneConversation"
-            action_input = action.create_phone_conversation_action_input(
-                conversation_id=agent_input.conversation_id,
-                params=params,
-                twilio_sid=self.conversation_state_manager.get_twilio_sid(),
-                user_message_tracker=user_message_tracker,
-            )
-        else:
-            action_input = action.create_action_input(
-                agent_input.conversation_id,
-                params,
-                user_message_tracker,
-            )
-        return action_input
+        return action.create_action_input(
+            agent_input.conversation_id,
+            params,
+            user_message_tracker,
+        )
 
     def enqueue_action_input(
         self,

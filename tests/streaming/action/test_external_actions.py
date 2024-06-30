@@ -3,7 +3,15 @@ import json
 import os
 
 import pytest
+from pytest_mock import MockerFixture
 
+from tests.fakedata.conversation import (
+    create_fake_agent,
+    create_fake_streaming_conversation,
+    create_fake_streaming_conversation_factory,
+    create_fake_twilio_phone_conversation_with_streaming_conversation_pipeline,
+    create_fake_vonage_phone_conversation_with_streaming_conversation_pipeline,
+)
 from tests.fakedata.id import generate_uuid
 from vocode.streaming.action.execute_external_action import (
     ExecuteExternalAction,
@@ -11,15 +19,21 @@ from vocode.streaming.action.execute_external_action import (
     ExecuteExternalActionVocodeActionConfig,
 )
 from vocode.streaming.action.external_actions_requester import ExternalActionResponse
+from vocode.streaming.agent.base_agent import BaseAgent
 from vocode.streaming.models.actions import (
+    ActionInput,
     TwilioPhoneConversationActionInput,
     VonagePhoneConversationActionInput,
 )
-from vocode.streaming.utils import create_conversation_id
-from vocode.streaming.utils.state_manager import (
-    TwilioPhoneConversationStateManager,
-    VonagePhoneConversationStateManager,
+from vocode.streaming.models.agent import ChatGPTAgentConfig
+from vocode.streaming.streaming_conversation import StreamingConversation
+from vocode.streaming.telephony.conversation.twilio_phone_conversation import (
+    TwilioPhoneConversation,
 )
+from vocode.streaming.telephony.conversation.vonage_phone_conversation import (
+    VonagePhoneConversation,
+)
+from vocode.streaming.utils import create_conversation_id
 
 ACTION_INPUT_SCHEMA: dict = {
     "type": "object",
@@ -62,59 +76,32 @@ def execute_action_setup(mocker, action_config) -> ExecuteExternalAction:
 
 
 @pytest.fixture
-def mock_twilio_conversation_state_manager(mocker) -> TwilioPhoneConversationStateManager:
-    """Fixture to mock TwilioPhoneConversationStateManager."""
-    manager = mocker.MagicMock(spec=TwilioPhoneConversationStateManager)
-    manager.mute_agent = mocker.MagicMock()
-    # Add any other necessary mock setup here
-    return manager
+def mock_agent_with_execute_external_action(mocker: MockerFixture, action_config) -> BaseAgent:
+    return create_fake_agent(
+        mocker,
+        agent_config=ChatGPTAgentConfig(prompt_preamble="", actions=[action_config]),
+    )
 
 
 @pytest.fixture
-def mock_vonage_conversation_state_manager(mocker) -> VonagePhoneConversationStateManager:
-    """Fixture to mock VonagePhoneConversationStateManager."""
-    manager = mocker.MagicMock(spec=VonagePhoneConversationStateManager)
-    manager.mute_agent = mocker.MagicMock()
-    # Add any other necessary mock setup here
-    return manager
+def mock_streaming_conversation(
+    mocker: MockerFixture, mock_agent_with_execute_external_action: BaseAgent
+) -> StreamingConversation:
+    return create_fake_streaming_conversation(mocker, agent=mock_agent_with_execute_external_action)
 
 
 @pytest.mark.asyncio
-async def test_vonage_execute_external_action_success(
+async def test_execute_external_action_success(
     mocker,
-    mock_vonage_conversation_state_manager: VonagePhoneConversationStateManager,
+    mock_streaming_conversation: StreamingConversation,
     execute_action_setup: ExecuteExternalAction,
 ):
-    execute_action_setup.attach_conversation_state_manager(mock_vonage_conversation_state_manager)
-    vonage_uuid = generate_uuid()
-
+    mock_streaming_conversation.actions_worker.attach_state(execute_action_setup)
     response = await execute_action_setup.run(
-        action_input=VonagePhoneConversationActionInput(
+        action_input=ActionInput(
             action_config=execute_action_setup.action_config,
             conversation_id=create_conversation_id(),
             params=ExecuteExternalActionParameters(payload={}),
-            vonage_uuid=str(vonage_uuid),
-        ),
-    )
-
-    assert response.response.success
-    assert response.response.result == {"test": "test"}
-
-
-@pytest.mark.asyncio
-async def test_twilio_execute_external_action_success(
-    mocker,
-    mock_twilio_conversation_state_manager: TwilioPhoneConversationStateManager,
-    execute_action_setup: ExecuteExternalAction,
-):
-    execute_action_setup.attach_conversation_state_manager(mock_twilio_conversation_state_manager)
-
-    response = await execute_action_setup.run(
-        action_input=TwilioPhoneConversationActionInput(
-            action_config=execute_action_setup.action_config,
-            conversation_id=create_conversation_id(),
-            params=ExecuteExternalActionParameters(payload={}),
-            twilio_sid="twilio_sid",
         ),
     )
 

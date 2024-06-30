@@ -166,16 +166,16 @@ class InterruptibleAgentResponseEvent(InterruptibleEvent[Payload]):
 
 class InterruptibleEventFactory:
     def create_interruptible_event(
-        self, payload: Any, is_interruptible: bool = True
-    ) -> InterruptibleEvent:
+        self, payload: Payload, is_interruptible: bool = True
+    ) -> InterruptibleEvent[Payload]:
         return InterruptibleEvent(payload, is_interruptible=is_interruptible)
 
     def create_interruptible_agent_response_event(
         self,
-        payload: Any,
+        payload: Payload,
         is_interruptible: bool = True,
         agent_response_tracker: Optional[asyncio.Event] = None,
-    ) -> InterruptibleAgentResponseEvent:
+    ) -> InterruptibleAgentResponseEvent[Payload]:
         return InterruptibleAgentResponseEvent(
             payload,
             is_interruptible=is_interruptible,

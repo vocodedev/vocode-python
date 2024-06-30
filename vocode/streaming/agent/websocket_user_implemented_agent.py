@@ -26,7 +26,7 @@ NUM_RESTARTS = 5
 
 
 class WebSocketUserImplementedAgent(BaseAgent[WebSocketUserImplementedAgentConfig]):
-    input_queue: asyncio.Queue[InterruptibleEvent[AgentInput]]
+    input_queue: asyncio.Queue[InterruptibleEvent[AgentInput | AgentResponse]]
 
     def __init__(
         self,

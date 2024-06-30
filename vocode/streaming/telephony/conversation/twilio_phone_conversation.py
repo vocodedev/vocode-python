@@ -7,23 +7,38 @@ from typing import Optional
 from fastapi import WebSocket
 from loguru import logger
 
+from vocode.streaming.action.abstract_factory import AbstractActionFactory
+from vocode.streaming.action.base_action import BaseAction
+from vocode.streaming.action.default_factory import DefaultTwilioPhoneConversationActionFactory
+from vocode.streaming.action.phone_call_action import TwilioPhoneConversationAction
+from vocode.streaming.action.worker import ActionsWorker
 from vocode.streaming.models.events import PhoneCallConnectedEvent
+from vocode.streaming.models.model import BaseModel
 from vocode.streaming.models.telephony import PhoneCallDirection, TwilioConfig
 from vocode.streaming.output_device.twilio_output_device import (
     ChunkFinishedMarkMessage,
     TwilioOutputDevice,
 )
-from vocode.streaming.pipeline.audio_pipeline import AudioPipeline
+from vocode.streaming.pipeline.abstract_pipeline_factory import AbstractPipelineFactory
 from vocode.streaming.telephony.client.twilio_client import TwilioClient
 from vocode.streaming.telephony.config_manager.base_config_manager import BaseConfigManager
 from vocode.streaming.telephony.conversation.abstract_phone_conversation import (
     AbstractPhoneConversation,
 )
-from vocode.streaming.utils.state_manager import TwilioPhoneConversationStateManager
+from vocode.streaming.utils.events_manager import EventsManager
 
 
 class TwilioPhoneConversationWebsocketAction(Enum):
     CLOSE_WEBSOCKET = 1
+
+
+class TwilioPhoneConversationActionsWorker(ActionsWorker):
+    twilio_phone_conversation: "TwilioPhoneConversation"
+
+    def attach_state(self, action: BaseAction):
+        super().attach_state(action)
+        if isinstance(action, TwilioPhoneConversationAction):
+            action.twilio_phone_conversation = self.twilio_phone_conversation
 
 
 class TwilioPhoneConversation(AbstractPhoneConversation[TwilioOutputDevice]):
@@ -36,12 +51,28 @@ class TwilioPhoneConversation(AbstractPhoneConversation[TwilioOutputDevice]):
         to_phone: str,
         base_url: str,
         config_manager: BaseConfigManager,
-        pipeline: AudioPipeline[TwilioOutputDevice],
+        pipeline_factory: AbstractPipelineFactory[BaseModel, TwilioOutputDevice],
+        pipeline_config: BaseModel,
         twilio_sid: str,
         twilio_config: Optional[TwilioConfig] = None,
+        id: Optional[str] = None,
+        action_factory: Optional[AbstractActionFactory] = None,
+        events_manager: Optional[EventsManager] = None,
         record_call: bool = False,
         noise_suppression: bool = False,  # is currently a no-op
     ):
+        actions_worker = TwilioPhoneConversationActionsWorker(
+            action_factory=action_factory or DefaultTwilioPhoneConversationActionFactory()
+        )
+        pipeline = pipeline_factory.create_pipeline(
+            config=pipeline_config,
+            output_device=TwilioOutputDevice(),
+            id=id,
+            events_manager=events_manager,
+            actions_worker=actions_worker,
+        )
+        actions_worker.twilio_phone_conversation = self
+
         super().__init__(
             direction=direction,
             from_phone=from_phone,
@@ -60,9 +91,6 @@ class TwilioPhoneConversation(AbstractPhoneConversation[TwilioOutputDevice]):
         )
         self.twilio_sid = twilio_sid
         self.record_call = record_call
-
-    def create_state_manager(self) -> TwilioPhoneConversationStateManager:
-        return TwilioPhoneConversationStateManager(self)
 
     async def attach_ws_and_start(self, ws: WebSocket):
         super().attach_ws(ws)
@@ -114,3 +142,9 @@ class TwilioPhoneConversation(AbstractPhoneConversation[TwilioOutputDevice]):
             logger.debug("Stopping...")
             return TwilioPhoneConversationWebsocketAction.CLOSE_WEBSOCKET
         return None
+
+    def create_twilio_client(self):
+        return TwilioClient(
+            base_url=self.base_url,
+            maybe_twilio_config=self.twilio_config,
+        )

@@ -14,13 +14,14 @@ from vocode.streaming.models.actions import (
 )
 
 if TYPE_CHECKING:
-    from vocode.streaming.utils.state_manager import AbstractConversationStateManager
+    from vocode.streaming.pipeline.audio_pipeline import AudioPipeline
 
 ActionConfigType = TypeVar("ActionConfigType", bound=ActionConfig)
 
 
 class BaseAction(Generic[ActionConfigType, ParametersType, ResponseType]):  # type: ignore
     description: str = ""
+    pipeline: "AudioPipeline"
 
     def __init__(
         self,
@@ -34,11 +35,6 @@ class BaseAction(Generic[ActionConfigType, ParametersType, ResponseType]):  # ty
         self.should_respond = should_respond
         self.quiet = quiet
         self.is_interruptible = is_interruptible
-
-    def attach_conversation_state_manager(
-        self, conversation_state_manager: "AbstractConversationStateManager"
-    ):
-        self.conversation_state_manager = conversation_state_manager
 
     async def run(self, action_input: ActionInput[ParametersType]) -> ActionOutput[ResponseType]:
         raise NotImplementedError

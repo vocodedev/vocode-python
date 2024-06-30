@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from vocode.streaming.action.base_action import ActionConfigType, BaseAction
 from vocode.streaming.models.actions import (
@@ -9,13 +9,19 @@ from vocode.streaming.models.actions import (
     TwilioPhoneConversationActionInput,
     VonagePhoneConversationActionInput,
 )
-from vocode.streaming.utils.state_manager import (
-    TwilioPhoneConversationStateManager,
-    VonagePhoneConversationStateManager,
-)
+
+if TYPE_CHECKING:
+    from vocode.streaming.telephony.conversation.twilio_phone_conversation import (
+        TwilioPhoneConversation,
+    )
+    from vocode.streaming.telephony.conversation.vonage_phone_conversation import (
+        VonagePhoneConversation,
+    )
 
 
 class VonagePhoneConversationAction(BaseAction[ActionConfigType, ParametersType, ResponseType]):
+    vonage_phone_conversation: "VonagePhoneConversation"
+
     def create_phone_conversation_action_input(
         self,
         conversation_id: str,
@@ -37,12 +43,10 @@ class VonagePhoneConversationAction(BaseAction[ActionConfigType, ParametersType,
         assert isinstance(action_input, VonagePhoneConversationActionInput)
         return action_input.vonage_uuid
 
-    def attach_conversation_state_manager(self, conversation_state_manager: Any):
-        assert isinstance(conversation_state_manager, VonagePhoneConversationStateManager)
-        self.conversation_state_manager = conversation_state_manager
-
 
 class TwilioPhoneConversationAction(BaseAction[ActionConfigType, ParametersType, ResponseType]):
+    twilio_phone_conversation: "TwilioPhoneConversation"
+
     def create_phone_conversation_action_input(
         self,
         conversation_id: str,
@@ -63,7 +67,3 @@ class TwilioPhoneConversationAction(BaseAction[ActionConfigType, ParametersType,
     def get_twilio_sid(self, action_input: ActionInput[ParametersType]) -> str:
         assert isinstance(action_input, TwilioPhoneConversationActionInput)
         return action_input.twilio_sid
-
-    def attach_conversation_state_manager(self, conversation_state_manager: Any):
-        assert isinstance(conversation_state_manager, TwilioPhoneConversationStateManager)
-        self.conversation_state_manager = conversation_state_manager

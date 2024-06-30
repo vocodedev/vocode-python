@@ -1,21 +1,37 @@
 import os
+from typing import Optional
 
 import numpy as np
 from fastapi import WebSocket, WebSocketDisconnect
 from loguru import logger
 
+from vocode.streaming.action.abstract_factory import AbstractActionFactory
+from vocode.streaming.action.base_action import BaseAction
+from vocode.streaming.action.default_factory import DefaultVonagePhoneConversationActionFactory
+from vocode.streaming.action.phone_call_action import VonagePhoneConversationAction
+from vocode.streaming.action.worker import ActionsWorker
 from vocode.streaming.models.events import PhoneCallConnectedEvent
+from vocode.streaming.models.model import BaseModel
 from vocode.streaming.models.telephony import PhoneCallDirection, VonageConfig
 from vocode.streaming.output_device.vonage_output_device import VonageOutputDevice
-from vocode.streaming.pipeline.audio_pipeline import AudioPipeline
+from vocode.streaming.pipeline.abstract_pipeline_factory import AbstractPipelineFactory
 from vocode.streaming.telephony.client.vonage_client import VonageClient
 from vocode.streaming.telephony.config_manager.base_config_manager import BaseConfigManager
 from vocode.streaming.telephony.conversation.abstract_phone_conversation import (
     AbstractPhoneConversation,
 )
-from vocode.streaming.utils.state_manager import VonagePhoneConversationStateManager
+from vocode.streaming.utils.events_manager import EventsManager
 
 KOALA_CHUNK_SIZE = 512  # 16 bit samples, size 256
+
+
+class VonagePhoneConversationActionsWorker(ActionsWorker):
+    vonage_phone_conversation: "VonagePhoneConversation"
+
+    def attach_state(self, action: BaseAction):
+        super().attach_state(action)
+        if isinstance(action, VonagePhoneConversationAction):
+            action.vonage_phone_conversation = self.vonage_phone_conversation
 
 
 class VonagePhoneConversation(AbstractPhoneConversation[VonageOutputDevice]):
@@ -28,11 +44,27 @@ class VonagePhoneConversation(AbstractPhoneConversation[VonageOutputDevice]):
         to_phone: str,
         base_url: str,
         config_manager: BaseConfigManager,
-        pipeline: AudioPipeline[VonageOutputDevice],
+        pipeline_factory: AbstractPipelineFactory[BaseModel, VonageOutputDevice],
+        pipeline_config: BaseModel,
         vonage_uuid: str,
         vonage_config: VonageConfig,
+        id: Optional[str] = None,
+        action_factory: Optional[AbstractActionFactory] = None,
+        events_manager: Optional[EventsManager] = None,
         noise_suppression: bool = False,
     ):
+        actions_worker = VonagePhoneConversationActionsWorker(
+            action_factory=action_factory or DefaultVonagePhoneConversationActionFactory()
+        )
+        pipeline = pipeline_factory.create_pipeline(
+            config=pipeline_config,
+            output_device=VonageOutputDevice(),
+            id=id,
+            events_manager=events_manager,
+            actions_worker=actions_worker,
+        )
+        actions_worker.vonage_phone_conversation = self
+
         super().__init__(
             direction=direction,
             from_phone=from_phone,
@@ -56,9 +88,6 @@ class VonagePhoneConversation(AbstractPhoneConversation[VonageOutputDevice]):
             self.koala = pvkoala.create(
                 access_key=os.environ["KOALA_ACCESS_KEY"],
             )
-
-    def create_state_manager(self) -> VonagePhoneConversationStateManager:
-        return VonagePhoneConversationStateManager(self)
 
     async def attach_ws_and_start(self, ws: WebSocket):
         # start message
@@ -110,3 +139,9 @@ class VonagePhoneConversation(AbstractPhoneConversation[VonageOutputDevice]):
                 self.buffer = self.buffer[KOALA_CHUNK_SIZE:]
         else:
             self.pipeline.receive_audio(chunk)
+
+    def create_vonage_client(self):
+        return VonageClient(
+            base_url=self.base_url,
+            maybe_vonage_config=self.vonage_config,
+        )

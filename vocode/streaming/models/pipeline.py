@@ -19,3 +19,4 @@ class StreamingConversationConfig(TypedModel, type=PipelineType.STREAMING_CONVER
     transcriber_config: TranscriberConfig
     agent_config: AgentConfig
     synthesizer_config: SynthesizerConfig
+    speed_coefficient: float = 1.0

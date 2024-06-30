@@ -65,12 +65,10 @@ class CallsRouter(BaseRouter):
                 twilio_config=call_config.twilio_config,
                 twilio_sid=call_config.twilio_sid,
                 direction=call_config.direction,
-                pipeline=pipeline_factory.create_pipeline(
-                    config=call_config.pipeline_config,
-                    output_device=TwilioOutputDevice(),
-                    id=conversation_id,
-                    events_manager=events_manager,
-                ),
+                pipeline_factory=pipeline_factory,
+                pipeline_config=call_config.pipeline_config,
+                id=conversation_id,
+                events_manager=events_manager,
             )
         elif isinstance(call_config, VonageCallConfig):
             return VonagePhoneConversation(
@@ -81,14 +79,10 @@ class CallsRouter(BaseRouter):
                 vonage_config=call_config.vonage_config,
                 vonage_uuid=call_config.vonage_uuid,
                 direction=call_config.direction,
-                pipeline=pipeline_factory.create_pipeline(
-                    config=call_config.pipeline_config,
-                    output_device=VonageOutputDevice(
-                        output_to_speaker=call_config.output_to_speaker
-                    ),
-                    id=conversation_id,
-                    events_manager=events_manager,
-                ),
+                pipeline_factory=pipeline_factory,
+                pipeline_config=call_config.pipeline_config,
+                id=conversation_id,
+                events_manager=events_manager,
             )
         else:
             raise ValueError(f"Unknown call config type {call_config.type}")

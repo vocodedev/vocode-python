@@ -9,10 +9,6 @@ from vocode.streaming.action.phone_call_action import (
 )
 from vocode.streaming.models.actions import ActionConfig as VocodeActionConfig
 from vocode.streaming.models.actions import ActionInput, ActionOutput
-from vocode.streaming.utils.state_manager import (
-    TwilioPhoneConversationStateManager,
-    VonagePhoneConversationStateManager,
-)
 
 
 class DTMFParameters(BaseModel):
@@ -43,16 +39,15 @@ class VonageDTMF(
     description: str = FUNCTION_DESCRIPTION
     parameters_type: Type[DTMFParameters] = DTMFParameters
     response_type: Type[DTMFResponse] = DTMFResponse
-    conversation_state_manager: VonagePhoneConversationStateManager
 
     def __init__(self, action_config: DTMFVocodeActionConfig):
         super().__init__(action_config, quiet=True)
 
     async def run(self, action_input: ActionInput[DTMFParameters]) -> ActionOutput[DTMFResponse]:
         buttons = action_input.params.buttons
-        vonage_client = self.conversation_state_manager.create_vonage_client()
+        vonage_client = self.vonage_phone_conversation.create_vonage_client()
         await vonage_client.send_dtmf(
-            vonage_uuid=self.get_vonage_uuid(action_input), digits=buttons
+            vonage_uuid=self.vonage_phone_conversation.vonage_uuid, digits=buttons
         )
 
         return ActionOutput(
@@ -67,7 +62,6 @@ class TwilioDTMF(
     description: str = FUNCTION_DESCRIPTION
     parameters_type: Type[DTMFParameters] = DTMFParameters
     response_type: Type[DTMFResponse] = DTMFResponse
-    conversation_state_manager: TwilioPhoneConversationStateManager
 
     def __init__(self, action_config: DTMFVocodeActionConfig):
         super().__init__(

@@ -3,11 +3,11 @@ from typing import Any, Dict, Optional, Type
 
 from pydantic.v1 import BaseModel
 
-from vocode.streaming.action.base_action import BaseAction
 from vocode.streaming.action.external_actions_requester import (
     ExternalActionResponse,
     ExternalActionsRequester,
 )
+from vocode.streaming.action.streaming_conversation_action import StreamingConversationAction
 from vocode.streaming.models.actions import ActionConfig as VocodeActionConfig
 from vocode.streaming.models.actions import ActionInput, ActionOutput, ExternalActionProcessingMode
 from vocode.streaming.models.message import BaseMessage
@@ -36,7 +36,7 @@ class ExecuteExternalActionResponse(BaseModel):
 
 
 class ExecuteExternalAction(
-    BaseAction[
+    StreamingConversationAction[
         ExecuteExternalActionVocodeActionConfig,
         ExecuteExternalActionParameters,
         ExecuteExternalActionResponse,
@@ -92,9 +92,9 @@ class ExecuteExternalAction(
         if self.should_respond and action_input.user_message_tracker is not None:
             await action_input.user_message_tracker.wait()
 
-        self.conversation_state_manager.mute_agent()
+        self.pipeline.agent.is_muted = True
         response = await self.send_external_action_request(action_input)
-        self.conversation_state_manager.unmute_agent()
+        self.pipeline.agent.is_muted = False
 
         # TODO (EA): pass specific context based on error
         return ActionOutput(

@@ -126,4 +126,11 @@ class ActionOutput(BaseModel, Generic[ResponseType]):
     response: ResponseType
 
 
+class ActionResponse(BaseModel, Generic[ParametersType, ResponseType]):
+    conversation_id: str
+    action_input: ActionInput
+    action_output: ActionOutput
+    is_quiet: bool = False
+
+
 ExternalActionProcessingMode = Literal["muted"]
