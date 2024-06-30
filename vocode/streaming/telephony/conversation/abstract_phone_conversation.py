@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Generic, Literal, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, Generic, Literal, Optional, TypeVar, Union
 
 from fastapi import WebSocket
 from loguru import logger
@@ -18,6 +18,7 @@ from vocode.streaming.telephony.config_manager.base_config_manager import BaseCo
 from vocode.streaming.transcriber.abstract_factory import AbstractTranscriberFactory
 from vocode.streaming.utils import create_conversation_id
 from vocode.streaming.utils.events_manager import EventsManager
+from vocode.streaming.utils.state_manager import PhoneConversationStateManager
 
 TelephonyOutputDeviceType = TypeVar(
     "TelephonyOutputDeviceType", bound=Union[TwilioOutputDevice, VonageOutputDevice]
@@ -28,7 +29,9 @@ LOW_INTERRUPT_SENSITIVITY_THRESHOLD = 0.9
 TelephonyProvider = Literal["twilio", "vonage"]
 
 
-class AbstractPhoneConversation(Generic[TelephonyOutputDeviceType]):
+class AbstractPhoneConversation(
+    AudioPipeline[TelephonyOutputDeviceType, PhoneConversationStateManager]
+):
     telephony_provider: TelephonyProvider
 
     def __init__(
@@ -59,5 +62,7 @@ class AbstractPhoneConversation(Generic[TelephonyOutputDeviceType]):
         pass
 
     async def terminate(self):
-        self.pipeline.events_manager.publish_event(PhoneCallEndedEvent(conversation_id=self.id))
+        self.pipeline.events_manager.publish_event(
+            PhoneCallEndedEvent(conversation_id=self.pipeline.id)
+        )
         await self.pipeline.terminate()

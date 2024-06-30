@@ -44,6 +44,10 @@ from vocode.streaming.pipeline.worker import (
 )
 from vocode.streaming.utils import unrepeating_randomizer
 from vocode.streaming.utils.speed_manager import SpeedManager
+from vocode.streaming.utils.state_manager import (
+    TwilioPhoneConversationStateManager,
+    VonagePhoneConversationStateManager,
+)
 from vocode.utils.sentry_utils import CustomSentrySpans, sentry_create_span
 
 if TYPE_CHECKING:
@@ -70,8 +74,6 @@ class AgentInputType(str, Enum):
 
 class AgentInput(TypedModel, type=AgentInputType.BASE.value):  # type: ignore
     conversation_id: str
-    vonage_uuid: Optional[str]
-    twilio_sid: Optional[str]
     agent_response_tracker: Optional[asyncio.Event] = None
 
     class Config:
@@ -515,24 +517,25 @@ class RespondAgent(BaseAgent[AgentConfigType]):
     ) -> ActionInput:
         action_input: ActionInput
         if isinstance(action, VonagePhoneConversationAction):
-            assert (
-                agent_input.vonage_uuid is not None
-            ), "Cannot use VonagePhoneConversationActionFactory unless the attached conversation is a VonagePhoneConversation"
+            assert isinstance(
+                self.conversation_state_manager,
+                VonagePhoneConversationStateManager,
+            ), "Cannot use a VonagePhoneConversationAction unless the attached conversation is a VonagePhoneConversation"
             action_input = action.create_phone_conversation_action_input(
-                agent_input.conversation_id,
-                params,
-                agent_input.vonage_uuid,
-                user_message_tracker,
+                conversation_id=agent_input.conversation_id,
+                params=params,
+                vonage_uuid=self.conversation_state_manager.get_vonage_uuid(),
+                user_message_tracker=user_message_tracker,
             )
         elif isinstance(action, TwilioPhoneConversationAction):
-            assert (
-                agent_input.twilio_sid is not None
-            ), "Cannot use TwilioPhoneConversationActionFactory unless the attached conversation is a TwilioPhoneConversation"
+            assert isinstance(
+                self.conversation_state_manager, TwilioPhoneConversationStateManager
+            ), "Cannot use a TwilioPhoneConversationAction unless the attached conversation is a TwilioPhoneConversation"
             action_input = action.create_phone_conversation_action_input(
-                agent_input.conversation_id,
-                params,
-                agent_input.twilio_sid,
-                user_message_tracker,
+                conversation_id=agent_input.conversation_id,
+                params=params,
+                twilio_sid=self.conversation_state_manager.get_twilio_sid(),
+                user_message_tracker=user_message_tracker,
             )
         else:
             action_input = action.create_action_input(
