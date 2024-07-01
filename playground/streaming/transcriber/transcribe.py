@@ -1,11 +1,11 @@
 from vocode.streaming.input_device.microphone_input import MicrophoneInput
 from vocode.streaming.models.transcriber import DeepgramTranscriberConfig, Transcription
+from vocode.streaming.pipeline.worker import AsyncWorker
 from vocode.streaming.transcriber.base_transcriber import BaseTranscriber
 from vocode.streaming.transcriber.deepgram_transcriber import (
     DeepgramEndpointingConfig,
     DeepgramTranscriber,
 )
-from vocode.streaming.utils.worker import AsyncWorker
 
 
 class TranscriptionPrinter(AsyncWorker[Transcription]):

@@ -20,8 +20,8 @@ from vocode.streaming.models.actions import (
 from vocode.streaming.models.agent import ChatGPTAgentConfig
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.transcript import Transcript
-from vocode.streaming.utils.state_manager import AbstractConversationStateManager
-from vocode.streaming.utils.worker import InterruptibleAgentResponseEvent, QueueConsumer
+from vocode.streaming.pipeline.worker import InterruptibleAgentResponseEvent, QueueConsumer
+from vocode.streaming.streaming_conversation import StreamingConversation
 
 load_dotenv()
 
@@ -75,7 +75,7 @@ class ShoutActionFactory(AbstractActionFactory):
             raise Exception("Invalid action type")
 
 
-class DummyConversationManager(AbstractConversationStateManager):
+class DummyStreamingConversation(StreamingConversation):
     """For use with Agents operating in a non-call context."""
 
     def __init__(
@@ -192,12 +192,12 @@ async def run_agent(
         )
         actions_worker.consumer = agent
         agent.actions_consumer = actions_worker
-        actions_worker.attach_conversation_state_manager(agent.conversation_state_manager)
+        actions_worker.pipeline = agent.streaming_conversation
         actions_worker.start()
 
     await asyncio.gather(receiver(), sender())
     if actions_worker is not None:
-        actions_worker.terminate()
+        await actions_worker.terminate()
 
 
 async def agent_main():
@@ -226,14 +226,14 @@ async def agent_main():
         ),
         action_factory=ShoutActionFactory(),
     )
-    agent.attach_conversation_state_manager(DummyConversationManager())
+    agent.streaming_conversation = DummyStreamingConversation()
     agent.attach_transcript(transcript)
     agent.start()
 
     try:
         await run_agent(agent, interruption_probability=0, backchannel_probability=0)
     except KeyboardInterrupt:
-        agent.terminate()
+        await agent.terminate()
 
 
 if __name__ == "__main__":

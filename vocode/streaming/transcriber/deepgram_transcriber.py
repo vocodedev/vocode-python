@@ -177,7 +177,7 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
 
         logger.error("Deepgram connection died, not restarting")
 
-    def terminate(self):
+    async def terminate(self):
         self._track_latency_of_transcription_start()
         # Put this in logs until we sentry metrics show up
         # properly on dashboard
@@ -192,7 +192,7 @@ class DeepgramTranscriber(BaseAsyncTranscriber[DeepgramTranscriberConfig]):
         terminate_msg = json.dumps({"type": "CloseStream"}).encode("utf-8")
         self.consume_nonblocking(terminate_msg)  # todo (dow-107): typing
         self._ended = True
-        super().terminate()
+        await super().terminate()
 
     def get_input_sample_width(self):
         encoding = self.transcriber_config.audio_encoding

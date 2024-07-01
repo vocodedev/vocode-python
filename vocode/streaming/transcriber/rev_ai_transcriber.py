@@ -135,7 +135,8 @@ class RevAITranscriber(BaseAsyncTranscriber[RevAITranscriberConfig]):
 
             await asyncio.gather(sender(ws), receiver(ws))
 
-    def terminate(self):
+    async def terminate(self):
         terminate_msg = json.dumps({"type": "CloseStream"})
         self.consume_nonblocking(terminate_msg)
         self.closed = True
+        await super().terminate()

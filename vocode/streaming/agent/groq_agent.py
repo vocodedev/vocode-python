@@ -205,7 +205,7 @@ class GroqAgent(RespondAgent[GroqAgentConfig]):
 
         response_generator = collate_response_async
         using_input_streaming_synthesizer = (
-            self.conversation_state_manager.using_input_streaming_synthesizer()
+            self.streaming_conversation.using_input_streaming_synthesizer()
         )
         if using_input_streaming_synthesizer:
             response_generator = stream_response_async

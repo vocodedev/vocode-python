@@ -16,13 +16,13 @@ from vocode.streaming.models.agent import FillerAudioConfig
 from vocode.streaming.models.audio import AudioEncoding, SamplingRate
 from vocode.streaming.models.message import BaseMessage, BotBackchannel, SilenceMessage
 from vocode.streaming.models.synthesizer import SynthesizerConfig
+from vocode.streaming.pipeline.worker import QueueConsumer
 from vocode.streaming.synthesizer.audio_cache import AudioCache
 from vocode.streaming.synthesizer.miniaudio_worker import MiniaudioWorker
 from vocode.streaming.telephony.constants import MULAW_SILENCE_BYTE, PCM_SILENCE_BYTE
 from vocode.streaming.utils import convert_wav, get_chunk_size_per_second
 from vocode.streaming.utils.async_requester import AsyncRequestor
 from vocode.streaming.utils.create_task import asyncio_create_task_with_done_error_log
-from vocode.streaming.utils.worker import QueueConsumer
 
 FILLER_PHRASES = [
     BaseMessage(text="Um..."),
@@ -446,7 +446,7 @@ class BaseSynthesizer(Generic[SynthesizerConfigType]):
         except asyncio.CancelledError:
             pass
         finally:
-            miniaudio_worker.terminate()
+            await miniaudio_worker.terminate()
 
     def _resample_chunk(
         self,

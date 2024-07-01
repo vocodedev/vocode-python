@@ -7,6 +7,13 @@ import pytest
 from aioresponses import aioresponses
 from pytest_mock import MockerFixture
 
+from tests.fakedata.conversation import (
+    create_fake_agent,
+    create_fake_streaming_conversation,
+    create_fake_streaming_conversation_factory,
+    create_fake_twilio_phone_conversation_with_streaming_conversation_pipeline,
+    create_fake_vonage_phone_conversation_with_streaming_conversation_pipeline,
+)
 from tests.fakedata.id import generate_uuid
 from vocode.streaming.action.transfer_call import (
     TransferCallEmptyParameters,
@@ -14,18 +21,23 @@ from vocode.streaming.action.transfer_call import (
     TwilioTransferCall,
     VonageTransferCall,
 )
+from vocode.streaming.agent.base_agent import BaseAgent
 from vocode.streaming.models.actions import (
     TwilioPhoneConversationActionInput,
     VonagePhoneConversationActionInput,
 )
+from vocode.streaming.models.agent import ChatGPTAgentConfig
 from vocode.streaming.models.events import Sender
 from vocode.streaming.models.telephony import TwilioConfig, VonageConfig
 from vocode.streaming.models.transcript import Message, Transcript
-from vocode.streaming.utils import create_conversation_id
-from vocode.streaming.utils.state_manager import (
-    TwilioPhoneConversationStateManager,
-    VonagePhoneConversationStateManager,
+from vocode.streaming.streaming_conversation import StreamingConversation
+from vocode.streaming.telephony.conversation.twilio_phone_conversation import (
+    TwilioPhoneConversation,
 )
+from vocode.streaming.telephony.conversation.vonage_phone_conversation import (
+    VonagePhoneConversation,
+)
+from vocode.streaming.utils import create_conversation_id
 
 TRANSFER_PHONE_NUMBER = "12345678920"
 
@@ -49,38 +61,51 @@ def mock_vonage_config():
 
 
 @pytest.fixture
-def mock_twilio_phone_conversation(mock_twilio_config) -> MagicMock:
-    twilio_phone_conversation = MagicMock()
-    twilio_phone_conversation.twilio_config = mock_twilio_config
-    return twilio_phone_conversation
+def mock_agent_with_transfer_call_action(mocker: MockerFixture) -> BaseAgent:
+    return create_fake_agent(
+        mocker,
+        agent_config=ChatGPTAgentConfig(
+            prompt_preamble="",
+            actions=[TransferCallVocodeActionConfig(phone_number=TRANSFER_PHONE_NUMBER)],
+        ),
+    )
 
 
 @pytest.fixture
-def mock_vonage_phone_conversation(mock_vonage_config) -> MagicMock:
-    vonage_phone_conversation = MagicMock()
-    vonage_phone_conversation.vonage_config = mock_vonage_config
-    return vonage_phone_conversation
+def mock_streaming_conversation_factory(
+    mocker: MockerFixture, mock_agent_with_transfer_call_action: BaseAgent
+) -> StreamingConversation:
+    return create_fake_streaming_conversation_factory(
+        mocker, agent=mock_agent_with_transfer_call_action
+    )
 
 
 @pytest.fixture
-def mock_twilio_conversation_state_manager(
-    mocker: Any, mock_twilio_phone_conversation: MagicMock
-) -> TwilioPhoneConversationStateManager:
-    return TwilioPhoneConversationStateManager(mock_twilio_phone_conversation)
+def mock_twilio_phone_conversation(
+    mocker: MockerFixture, mock_twilio_config, mock_streaming_conversation_factory
+) -> TwilioPhoneConversation:
+    return create_fake_twilio_phone_conversation_with_streaming_conversation_pipeline(
+        mocker,
+        streaming_conversation_factory=mock_streaming_conversation_factory,
+        twilio_config=mock_twilio_config,
+    )
 
 
 @pytest.fixture
-def mock_vonage_conversation_state_manager(
-    mocker: Any, mock_vonage_phone_conversation: MagicMock
-) -> VonagePhoneConversationStateManager:
-    return VonagePhoneConversationStateManager(mock_vonage_phone_conversation)
+def mock_vonage_phone_conversation(
+    mocker: MockerFixture, mock_vonage_config, mock_streaming_conversation_factory
+) -> VonagePhoneConversation:
+    return create_fake_vonage_phone_conversation_with_streaming_conversation_pipeline(
+        mocker,
+        streaming_conversation_factory=mock_streaming_conversation_factory,
+        vonage_config=mock_vonage_config,
+    )
 
 
 @pytest.mark.asyncio
 async def test_twilio_transfer_call_succeeds(
     mocker: Any,
-    mock_twilio_conversation_state_manager: TwilioPhoneConversationStateManager,
-    mock_twilio_phone_conversation: MagicMock,
+    mock_twilio_phone_conversation: TwilioPhoneConversation,
     mock_twilio_config: TwilioConfig,
 ):
     action = TwilioTransferCall(
@@ -88,7 +113,8 @@ async def test_twilio_transfer_call_succeeds(
     )
     user_message_tracker = asyncio.Event()
     user_message_tracker.set()
-    action.attach_conversation_state_manager(mock_twilio_conversation_state_manager)
+
+    mock_twilio_phone_conversation.pipeline.actions_worker.attach_state(action)
     conversation_id = create_conversation_id()
 
     twilio_sid = "twilio_sid"
@@ -99,8 +125,6 @@ async def test_twilio_transfer_call_succeeds(
         twilio_sid=twilio_sid,
         user_message_tracker=user_message_tracker,
     )
-
-    mock_twilio_phone_conversation.transcript = Transcript(event_logs=[])
 
     with aioresponses() as m:
         m.post(
@@ -126,15 +150,16 @@ async def test_twilio_transfer_call_succeeds(
 @pytest.mark.asyncio
 async def test_twilio_transfer_call_fails_if_interrupted(
     mocker: Any,
-    mock_twilio_conversation_state_manager: TwilioPhoneConversationStateManager,
-    mock_twilio_phone_conversation: MagicMock,
+    mock_twilio_phone_conversation: TwilioPhoneConversation,
 ) -> None:
     action = TwilioTransferCall(
         action_config=TransferCallVocodeActionConfig(phone_number=TRANSFER_PHONE_NUMBER),
     )
     user_message_tracker = asyncio.Event()
     user_message_tracker.set()
-    action.attach_conversation_state_manager(mock_twilio_conversation_state_manager)
+
+    mock_twilio_phone_conversation.pipeline.actions_worker.attach_state(action)
+
     conversation_id = create_conversation_id()
 
     inner_transfer_call_mock = mocker.patch(
@@ -142,7 +167,7 @@ async def test_twilio_transfer_call_fails_if_interrupted(
         autospec=True,
     )
 
-    mock_twilio_phone_conversation.transcript = Transcript(
+    mock_twilio_phone_conversation.pipeline.transcript = Transcript(
         event_logs=[
             Message(
                 sender=Sender.BOT,
@@ -170,7 +195,7 @@ async def test_twilio_transfer_call_fails_if_interrupted(
 async def test_vonage_transfer_call_inbound(
     mocker: MockerFixture,
     mock_env,
-    mock_vonage_conversation_state_manager: VonagePhoneConversationStateManager,
+    mock_vonage_phone_conversation: VonagePhoneConversation,
 ) -> None:
     transfer_phone_number = "12345678920"
     action = VonageTransferCall(
@@ -181,13 +206,13 @@ async def test_vonage_transfer_call_inbound(
 
     vonage_uuid = generate_uuid()
 
-    mock_vonage_conversation_state_manager._vonage_phone_conversation.direction = "inbound"
-    mock_vonage_conversation_state_manager._vonage_phone_conversation.to_phone = "1234567894"
-    mock_vonage_conversation_state_manager._vonage_phone_conversation.from_phone = "1234567895"
+    mock_vonage_phone_conversation.direction = "inbound"
+    mock_vonage_phone_conversation.to_phone = "1234567894"
+    mock_vonage_phone_conversation.from_phone = "1234567895"
 
     conversation_id = create_conversation_id()
 
-    action.attach_conversation_state_manager(mock_vonage_conversation_state_manager)
+    mock_vonage_phone_conversation.pipeline.actions_worker.attach_state(action)
 
     user_message_tracker = asyncio.Event()
     user_message_tracker.set()
@@ -218,5 +243,5 @@ async def test_vonage_transfer_call_inbound(
         assert ncco[0]["endpoint"][0]["number"] == transfer_phone_number
         assert (
             ncco[0]["from"]
-            == mock_vonage_conversation_state_manager._vonage_phone_conversation.to_phone  # if inbound, the agent number is the to_phone
+            == mock_vonage_phone_conversation.to_phone  # if inbound, the agent number is the to_phone
         )

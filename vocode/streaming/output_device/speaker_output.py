@@ -53,7 +53,7 @@ class SpeakerOutput(AbstractOutputDevice):
             block[:size] = chunk_arr[i : i + size]
             self.queue.put_nowait(block)
 
-    def terminate(self):
+    async def terminate(self):
         self.stream.close()
 
     @classmethod

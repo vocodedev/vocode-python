@@ -5,24 +5,33 @@ import numpy as np
 from fastapi import WebSocket, WebSocketDisconnect
 from loguru import logger
 
-from vocode.streaming.agent.abstract_factory import AbstractAgentFactory
-from vocode.streaming.models.agent import AgentConfig
+from vocode.streaming.action.abstract_factory import AbstractActionFactory
+from vocode.streaming.action.base_action import BaseAction
+from vocode.streaming.action.default_factory import DefaultVonagePhoneConversationActionFactory
+from vocode.streaming.action.phone_call_action import VonagePhoneConversationAction
+from vocode.streaming.action.worker import ActionsWorker
 from vocode.streaming.models.events import PhoneCallConnectedEvent
-from vocode.streaming.models.synthesizer import SynthesizerConfig
+from vocode.streaming.models.model import BaseModel
 from vocode.streaming.models.telephony import PhoneCallDirection, VonageConfig
-from vocode.streaming.models.transcriber import TranscriberConfig
 from vocode.streaming.output_device.vonage_output_device import VonageOutputDevice
-from vocode.streaming.synthesizer.abstract_factory import AbstractSynthesizerFactory
+from vocode.streaming.pipeline.abstract_pipeline_factory import AbstractPipelineFactory
 from vocode.streaming.telephony.client.vonage_client import VonageClient
 from vocode.streaming.telephony.config_manager.base_config_manager import BaseConfigManager
 from vocode.streaming.telephony.conversation.abstract_phone_conversation import (
     AbstractPhoneConversation,
 )
-from vocode.streaming.transcriber.abstract_factory import AbstractTranscriberFactory
 from vocode.streaming.utils.events_manager import EventsManager
-from vocode.streaming.utils.state_manager import VonagePhoneConversationStateManager
 
 KOALA_CHUNK_SIZE = 512  # 16 bit samples, size 256
+
+
+class VonagePhoneConversationActionsWorker(ActionsWorker):
+    vonage_phone_conversation: "VonagePhoneConversation"
+
+    def attach_state(self, action: BaseAction):
+        super().attach_state(action)
+        if isinstance(action, VonagePhoneConversationAction):
+            action.vonage_phone_conversation = self.vonage_phone_conversation
 
 
 class VonagePhoneConversation(AbstractPhoneConversation[VonageOutputDevice]):
@@ -35,37 +44,34 @@ class VonagePhoneConversation(AbstractPhoneConversation[VonageOutputDevice]):
         to_phone: str,
         base_url: str,
         config_manager: BaseConfigManager,
-        agent_config: AgentConfig,
-        transcriber_config: TranscriberConfig,
-        synthesizer_config: SynthesizerConfig,
+        pipeline_factory: AbstractPipelineFactory[BaseModel, VonageOutputDevice],
+        pipeline_config: BaseModel,
         vonage_uuid: str,
         vonage_config: VonageConfig,
-        agent_factory: AbstractAgentFactory,
-        transcriber_factory: AbstractTranscriberFactory,
-        synthesizer_factory: AbstractSynthesizerFactory,
-        conversation_id: Optional[str] = None,
+        id: Optional[str] = None,
+        action_factory: Optional[AbstractActionFactory] = None,
         events_manager: Optional[EventsManager] = None,
-        output_to_speaker: bool = False,
-        speed_coefficient: float = 1.0,
         noise_suppression: bool = False,
     ):
-        self.speed_coefficient = speed_coefficient
+        actions_worker = VonagePhoneConversationActionsWorker(
+            action_factory=action_factory or DefaultVonagePhoneConversationActionFactory()
+        )
+        pipeline = pipeline_factory.create_pipeline(
+            config=pipeline_config,
+            output_device=VonageOutputDevice(),
+            id=id,
+            events_manager=events_manager,
+            actions_worker=actions_worker,
+        )
+        actions_worker.vonage_phone_conversation = self
+
         super().__init__(
             direction=direction,
-            speed_coefficient=speed_coefficient,
             from_phone=from_phone,
             to_phone=to_phone,
             base_url=base_url,
             config_manager=config_manager,
-            output_device=VonageOutputDevice(output_to_speaker=output_to_speaker),
-            agent_config=agent_config,
-            transcriber_config=transcriber_config,
-            synthesizer_config=synthesizer_config,
-            conversation_id=conversation_id,
-            events_manager=events_manager,
-            transcriber_factory=transcriber_factory,
-            agent_factory=agent_factory,
-            synthesizer_factory=synthesizer_factory,
+            pipeline=pipeline,
         )
         self.vonage_config = vonage_config
         self.telephony_client = VonageClient(
@@ -83,24 +89,21 @@ class VonagePhoneConversation(AbstractPhoneConversation[VonageOutputDevice]):
                 access_key=os.environ["KOALA_ACCESS_KEY"],
             )
 
-    def create_state_manager(self) -> VonagePhoneConversationStateManager:
-        return VonagePhoneConversationStateManager(self)
-
     async def attach_ws_and_start(self, ws: WebSocket):
         # start message
         await ws.receive()
         super().attach_ws(ws)
 
-        await self.start()
-        self.events_manager.publish_event(
+        await self.pipeline.start()
+        self.pipeline.events_manager.publish_event(
             PhoneCallConnectedEvent(
-                conversation_id=self.id,
+                conversation_id=self.pipeline.id,
                 to_phone_number=self.to_phone,
                 from_phone_number=self.from_phone,
             )
         )
         disconnected = False
-        while self.active:
+        while self.pipeline.is_active():
             try:
                 message = await ws.receive()
                 if message["type"] == "websocket.disconnect":
@@ -132,7 +135,13 @@ class VonagePhoneConversation(AbstractPhoneConversation[VonageOutputDevice]):
                     ).tobytes()
                 except Exception:
                     denoised_chunk = koala_chunk.tobytes()
-                super().receive_audio(denoised_chunk)
+                self.pipeline.receive_audio(denoised_chunk)
                 self.buffer = self.buffer[KOALA_CHUNK_SIZE:]
         else:
-            super().receive_audio(chunk)
+            self.pipeline.receive_audio(chunk)
+
+    def create_vonage_client(self):
+        return VonageClient(
+            base_url=self.base_url,
+            maybe_vonage_config=self.vonage_config,
+        )

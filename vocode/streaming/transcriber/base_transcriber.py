@@ -7,8 +7,8 @@ from typing import Generic, Optional, TypeVar, Union
 
 from vocode.streaming.models.audio import AudioEncoding
 from vocode.streaming.models.transcriber import TranscriberConfig, Transcription
+from vocode.streaming.pipeline.worker import AbstractWorker, AsyncWorker, ThreadAsyncWorker
 from vocode.streaming.utils.speed_manager import SpeedManager
-from vocode.streaming.utils.worker import AbstractWorker, AsyncWorker, ThreadAsyncWorker
 
 TranscriberConfigType = TypeVar("TranscriberConfigType", bound=TranscriberConfig)
 
@@ -57,18 +57,14 @@ class AbstractTranscriber(Generic[TranscriberConfigType], AbstractWorker[bytes])
     def produce_nonblocking(self, item: Transcription):
         self.consumer.consume_nonblocking(item)
 
-    @abstractmethod
-    def terminate(self):
-        pass
-
 
 class BaseAsyncTranscriber(AbstractTranscriber[TranscriberConfigType], AsyncWorker[bytes]):  # type: ignore
     def __init__(self, transcriber_config: TranscriberConfigType):
         AbstractTranscriber.__init__(self, transcriber_config)
         AsyncWorker.__init__(self)
 
-    def terminate(self):
-        AsyncWorker.terminate(self)
+    async def terminate(self):
+        await AsyncWorker.terminate(self)
 
 
 class BaseThreadAsyncTranscriber(  # type: ignore
@@ -101,8 +97,8 @@ class BaseThreadAsyncTranscriber(  # type: ignore
     def produce_nonblocking(self, item: Transcription):
         self.output_janus_queue.sync_q.put_nowait(item)
 
-    def terminate(self):
-        ThreadAsyncWorker.terminate(self)
+    async def terminate(self):
+        await ThreadAsyncWorker.terminate(self)
 
 
 BaseTranscriber = Union[

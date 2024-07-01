@@ -141,7 +141,7 @@ class AzureTranscriber(BaseThreadAsyncTranscriber[AzureTranscriberConfig]):
 
             yield b"".join(data)
 
-    def terminate(self):
+    async def terminate(self):
         self._ended = True
         self.speech.stop_continuous_recognition_async()
-        super().terminate()
+        await super().terminate()

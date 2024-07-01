@@ -30,6 +30,6 @@ class FileOutputDevice(RateLimitInterruptionsOutputDevice):
     async def play(self, chunk: bytes):
         await asyncio.to_thread(lambda: self.wav.writeframes(chunk))
 
-    def terminate(self):
+    async def terminate(self):
         self.wav.close()
-        super().terminate()
+        await super().terminate()

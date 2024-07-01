@@ -8,9 +8,9 @@ import miniaudio
 from loguru import logger
 
 from vocode.streaming.models.synthesizer import SynthesizerConfig
+from vocode.streaming.pipeline.worker import AbstractWorker, ThreadAsyncWorker
 from vocode.streaming.utils import convert_wav
 from vocode.streaming.utils.mp3_helper import decode_mp3
-from vocode.streaming.utils.worker import AbstractWorker, ThreadAsyncWorker
 
 
 class MiniaudioWorker(ThreadAsyncWorker[Union[bytes, None]]):
@@ -96,6 +96,6 @@ class MiniaudioWorker(ThreadAsyncWorker[Union[bytes, None]]):
             current_wav_output_buffer = current_wav_output_buffer[output_buffer_idx:]
             current_wav_buffer.extend(new_bytes)
 
-    def terminate(self):
+    async def terminate(self):
         self._ended = True
-        super().terminate()
+        await super().terminate()

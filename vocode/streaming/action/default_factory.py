@@ -33,15 +33,23 @@ TWILIO_ACTIONS: Dict[ActionType, Type[TwilioPhoneConversationAction]] = {
 
 
 class DefaultActionFactory(AbstractActionFactory):
-    def __init__(self, actions: Sequence[ActionConfig] | dict = {}):
-
-        self.action_configs_dict = {action.type: action for action in actions}
-        self.actions = CONVERSATION_ACTIONS
+    def __init__(self):
+        self.actions = CONVERSATION_ACTIONS  # TODO (DOW-119): StreamingConversationActionFactory
 
     def create_action(self, action_config: ActionConfig):
-        if action_config.type not in self.action_configs_dict:
+        if action_config.type not in self.actions:
             raise Exception("Action type not supported by Agent config.")
 
         action_class = self.actions[action_config.type]
 
         return action_class(action_config)
+
+
+class DefaultTwilioPhoneConversationActionFactory(DefaultActionFactory):
+    def __init__(self):
+        self.actions = {**TWILIO_ACTIONS, **CONVERSATION_ACTIONS}
+
+
+class DefaultVonagePhoneConversationActionFactory(DefaultActionFactory):
+    def __init__(self):
+        self.actions = {**VONAGE_ACTIONS, **CONVERSATION_ACTIONS}

@@ -7,6 +7,7 @@ import pytest
 from pydantic.v1 import BaseModel
 from pytest_mock import MockerFixture
 
+from tests.fakedata.conversation import create_fake_agent, create_fake_streaming_conversation
 from tests.fakedata.id import generate_uuid
 from vocode.streaming.action.end_conversation import (
     EndConversation,
@@ -14,10 +15,13 @@ from vocode.streaming.action.end_conversation import (
     EndConversationVocodeActionConfig,
 )
 from vocode.streaming.models.actions import (
+    ActionInput,
     TwilioPhoneConversationActionInput,
     VonagePhoneConversationActionInput,
 )
+from vocode.streaming.models.agent import ChatGPTAgentConfig
 from vocode.streaming.models.transcript import Transcript
+from vocode.streaming.streaming_conversation import StreamingConversation
 from vocode.streaming.utils import create_conversation_id
 
 
@@ -26,8 +30,6 @@ class EndConversationActionTestCase(BaseModel):
         arbitrary_types_allowed = True
 
     action: EndConversation
-    vonage_uuid: UUID
-    twilio_sid: str
     conversation_id: str
 
 
@@ -36,18 +38,8 @@ def end_conversation_action_test_case(mocker: MockerFixture) -> EndConversationA
     action = EndConversation(action_config=EndConversationVocodeActionConfig())
     return EndConversationActionTestCase(
         action=action,
-        vonage_uuid=generate_uuid(),
-        twilio_sid="twilio_sid",
         conversation_id=create_conversation_id(),
     )
-
-
-@pytest.fixture
-def conversation_state_manager_mock(mocker: MockerFixture) -> MagicMock:
-    mock = mocker.MagicMock()
-    mock.terminate_conversation = mocker.AsyncMock()
-    mock.transcript = Transcript()
-    return mock
 
 
 @pytest.fixture
@@ -57,76 +49,68 @@ def user_message_tracker() -> asyncio.Event:
     return tracker
 
 
+@pytest.fixture
+def mock_streaming_conversation_with_end_conversation_action(
+    mocker, end_conversation_action_test_case: EndConversationActionTestCase
+):
+    mock_streaming_conversation = create_fake_streaming_conversation(
+        mocker,
+        agent=create_fake_agent(
+            mocker,
+            agent_config=ChatGPTAgentConfig(
+                prompt_preamble="", actions=[end_conversation_action_test_case.action.action_config]
+            ),
+        ),
+    )
+    mock_streaming_conversation.actions_worker.attach_state(
+        end_conversation_action_test_case.action
+    )
+    mock_streaming_conversation.active = True
+    return mock_streaming_conversation
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "action_input_class, identifier",
-    [
-        (VonagePhoneConversationActionInput, "vonage_uuid"),
-        (TwilioPhoneConversationActionInput, "twilio_sid"),
-    ],
-)
 async def test_end_conversation_success(
     mocker: MockerFixture,
     mock_env: Generator,
+    mock_streaming_conversation_with_end_conversation_action: StreamingConversation,
     end_conversation_action_test_case: EndConversationActionTestCase,
-    conversation_state_manager_mock: MagicMock,
     user_message_tracker: asyncio.Event,
-    action_input_class: Type[BaseModel],
-    identifier: str,
 ):
-    end_conversation_action_test_case.action.attach_conversation_state_manager(
-        conversation_state_manager_mock
-    )
 
-    identifier_value = getattr(end_conversation_action_test_case, identifier)
-    action_input = action_input_class(
+    action_input = ActionInput(
         action_config=EndConversationVocodeActionConfig(),
         conversation_id=end_conversation_action_test_case.conversation_id,
         params=EndConversationParameters(),
-        **{identifier: str(identifier_value)},
         user_message_tracker=user_message_tracker,
     )
 
     response = await end_conversation_action_test_case.action.run(action_input=action_input)
 
     assert response.response.success
-    assert conversation_state_manager_mock.terminate_conversation.call_count == 1
+    assert not mock_streaming_conversation_with_end_conversation_action.is_active()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "action_input_class, identifier",
-    [
-        (VonagePhoneConversationActionInput, "vonage_uuid"),
-        (TwilioPhoneConversationActionInput, "twilio_sid"),
-    ],
-)
 async def test_end_conversation_fails_if_interrupted(
     mocker: MockerFixture,
     mock_env: Generator,
+    mock_streaming_conversation_with_end_conversation_action: StreamingConversation,
     end_conversation_action_test_case: EndConversationActionTestCase,
-    conversation_state_manager_mock: MagicMock,
     user_message_tracker: asyncio.Event,
-    action_input_class: Type[BaseModel],
-    identifier: str,
 ):
-    conversation_state_manager_mock.transcript.add_bot_message(
+    mock_streaming_conversation_with_end_conversation_action.transcript.add_bot_message(
         "Unfinished", conversation_id=end_conversation_action_test_case.conversation_id
     )
-    end_conversation_action_test_case.action.attach_conversation_state_manager(
-        conversation_state_manager_mock
-    )
 
-    identifier_value = getattr(end_conversation_action_test_case, identifier)
-    action_input = action_input_class(
+    action_input = ActionInput(
         action_config=EndConversationVocodeActionConfig(),
         conversation_id=end_conversation_action_test_case.conversation_id,
         params=EndConversationParameters(),
-        **{identifier: str(identifier_value)},
         user_message_tracker=user_message_tracker,
     )
 
     response = await end_conversation_action_test_case.action.run(action_input=action_input)
 
     assert not response.response.success
-    assert conversation_state_manager_mock.terminate_conversation.call_count == 0
+    assert mock_streaming_conversation_with_end_conversation_action.is_active()

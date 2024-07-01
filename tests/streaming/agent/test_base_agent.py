@@ -18,8 +18,7 @@ from vocode.streaming.models.agent import ChatGPTAgentConfig
 from vocode.streaming.models.message import BaseMessage
 from vocode.streaming.models.transcriber import Transcription
 from vocode.streaming.models.transcript import Transcript
-from vocode.streaming.utils.state_manager import ConversationStateManager
-from vocode.streaming.utils.worker import (
+from vocode.streaming.pipeline.worker import (
     InterruptibleAgentResponseEvent,
     InterruptibleEvent,
     QueueConsumer,
@@ -41,17 +40,12 @@ def _create_agent(
     agent_config: ChatGPTAgentConfig,
     transcript: Optional[Transcript] = None,
     action_factory: Optional[AbstractActionFactory] = None,
-    conversation_state_manager: Optional[ConversationStateManager] = None,
 ) -> ChatGPTAgent:
     agent = ChatGPTAgent(agent_config, action_factory=action_factory)
     if transcript:
         agent.attach_transcript(transcript)
     else:
         agent.attach_transcript(Transcript())
-    if conversation_state_manager:
-        agent.attach_conversation_state_manager(conversation_state_manager)
-    else:
-        agent.attach_conversation_state_manager(mocker.MagicMock())
     return agent
 
 

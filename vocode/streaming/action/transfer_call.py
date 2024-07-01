@@ -7,14 +7,11 @@ from vocode.streaming.action.phone_call_action import (
     TwilioPhoneConversationAction,
     VonagePhoneConversationAction,
 )
+from vocode.streaming.action.streaming_conversation_action import StreamingConversationAction
 from vocode.streaming.models.actions import ActionConfig as VocodeActionConfig
 from vocode.streaming.models.actions import ActionInput, ActionOutput
 from vocode.streaming.utils.async_requester import AsyncRequestor
 from vocode.streaming.utils.phone_numbers import sanitize_phone_number
-from vocode.streaming.utils.state_manager import (
-    TwilioPhoneConversationStateManager,
-    VonagePhoneConversationStateManager,
-)
 
 
 class TransferCallEmptyParameters(BaseModel):
@@ -66,13 +63,15 @@ SHOULD_RESPOND: Literal["always"] = "always"
 
 
 class TwilioTransferCall(
+    StreamingConversationAction[
+        TransferCallVocodeActionConfig, TransferCallParameters, TransferCallResponse
+    ],
     TwilioPhoneConversationAction[
         TransferCallVocodeActionConfig, TransferCallParameters, TransferCallResponse
-    ]
+    ],
 ):
     description: str = FUNCTION_DESCRIPTION
     response_type: Type[TransferCallResponse] = TransferCallResponse
-    conversation_state_manager: TwilioPhoneConversationStateManager
 
     @property
     def parameters_type(self) -> Type[TransferCallParameters]:
@@ -93,7 +92,7 @@ class TwilioTransferCall(
         )
 
     async def transfer_call(self, twilio_call_sid: str, to_phone: str):
-        twilio_client = self.conversation_state_manager.create_twilio_client()
+        twilio_client = self.twilio_phone_conversation.create_twilio_client()
 
         url = "https://api.twilio.com/2010-04-01/Accounts/{twilio_account_sid}/Calls/{twilio_call_sid}.json".format(
             twilio_account_sid=twilio_client.get_telephony_config().account_sid,
@@ -125,7 +124,7 @@ class TwilioTransferCall(
 
         logger.info("Finished waiting for user message tracker, now attempting to transfer call")
 
-        if self.conversation_state_manager.transcript.was_last_message_interrupted():
+        if self.pipeline.transcript.was_last_message_interrupted():
             logger.info("Last bot message was interrupted, not transferring call")
             return ActionOutput(
                 action_type=action_input.action_config.type,
@@ -141,13 +140,15 @@ class TwilioTransferCall(
 
 
 class VonageTransferCall(
+    StreamingConversationAction[
+        TransferCallVocodeActionConfig, TransferCallParameters, TransferCallResponse
+    ],
     VonagePhoneConversationAction[
         TransferCallVocodeActionConfig, TransferCallParameters, TransferCallResponse
-    ]
+    ],
 ):
     description: str = FUNCTION_DESCRIPTION
     response_type: Type[TransferCallResponse] = TransferCallResponse
-    conversation_state_manager: VonagePhoneConversationStateManager
 
     @property
     def parameters_type(self) -> Type[TransferCallParameters]:
@@ -169,17 +170,17 @@ class VonageTransferCall(
     ) -> ActionOutput[TransferCallResponse]:
         if action_input.user_message_tracker is not None:
             await action_input.user_message_tracker.wait()
-        self.conversation_state_manager.mute_agent()
+        self.pipeline.agent.is_muted = True
 
         phone_number = self.action_config.get_phone_number(action_input)
         sanitized_phone_number = sanitize_phone_number(phone_number)
 
-        if self.conversation_state_manager.get_direction() == "outbound":
-            agent_phone_number = self.conversation_state_manager.get_from_phone()
+        if self.vonage_phone_conversation.direction == "outbound":
+            agent_phone_number = self.vonage_phone_conversation.from_phone
         else:
-            agent_phone_number = self.conversation_state_manager.get_to_phone()
+            agent_phone_number = self.vonage_phone_conversation.to_phone
 
-        await self.conversation_state_manager.create_vonage_client().update_call(
+        await self.vonage_phone_conversation.create_vonage_client().update_call(
             vonage_uuid=self.get_vonage_uuid(action_input),
             new_ncco=[
                 {

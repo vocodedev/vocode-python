@@ -6,10 +6,7 @@ from vocode.streaming.action.record_email import (
     RecordEmailParameters,
     RecordEmailVocodeActionConfig,
 )
-from vocode.streaming.models.actions import (
-    TwilioPhoneConversationActionInput,
-    VonagePhoneConversationActionInput,
-)
+from vocode.streaming.models.actions import ActionInput
 from vocode.streaming.utils import create_conversation_id
 
 # id is just a description of the parameterized test case's input
@@ -40,38 +37,17 @@ def record_email_action() -> RecordEmail:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("email_input,expected_success", EMAIL_TEST_CASES)
-async def test_vonage_email_validation(
+async def test_email_validation(
     record_email_action: RecordEmail, email_input: str, expected_success: bool
 ):
-    vonage_uuid = generate_uuid()
     res = await record_email_action.run(
-        action_input=VonagePhoneConversationActionInput(
+        action_input=ActionInput(
             action_config=RecordEmailVocodeActionConfig(),
             conversation_id=create_conversation_id(),
             params=RecordEmailParameters(
                 raw_value="",
                 formatted_value=email_input,
             ),
-            vonage_uuid=str(vonage_uuid),
-        ),
-    )
-    assert res.response.success == expected_success
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("email_input,expected_success", EMAIL_TEST_CASES)
-async def test_twilio_email_validation(
-    record_email_action: RecordEmail, email_input: str, expected_success: bool
-):
-    res = await record_email_action.run(
-        action_input=TwilioPhoneConversationActionInput(
-            action_config=RecordEmailVocodeActionConfig(),
-            conversation_id=create_conversation_id(),
-            params=RecordEmailParameters(
-                raw_value="",
-                formatted_value=email_input,
-            ),
-            twilio_sid="twilio_sid",
         ),
     )
     assert res.response.success == expected_success

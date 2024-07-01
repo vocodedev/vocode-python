@@ -6,37 +6,28 @@ from fastapi import APIRouter, Form, Request, Response
 from loguru import logger
 from pydantic.v1 import BaseModel, Field
 
-from vocode.streaming.agent.abstract_factory import AbstractAgentFactory
-from vocode.streaming.agent.default_factory import DefaultAgentFactory
-from vocode.streaming.models.agent import AgentConfig
 from vocode.streaming.models.events import RecordingEvent
-from vocode.streaming.models.synthesizer import SynthesizerConfig
+from vocode.streaming.models.pipeline import PipelineConfig
 from vocode.streaming.models.telephony import (
     TwilioCallConfig,
     TwilioConfig,
     VonageCallConfig,
     VonageConfig,
 )
-from vocode.streaming.models.transcriber import TranscriberConfig
-from vocode.streaming.synthesizer.abstract_factory import AbstractSynthesizerFactory
-from vocode.streaming.synthesizer.default_factory import DefaultSynthesizerFactory
+from vocode.streaming.pipeline.abstract_pipeline_factory import AbstractPipelineFactory
 from vocode.streaming.telephony.client.abstract_telephony_client import AbstractTelephonyClient
 from vocode.streaming.telephony.client.twilio_client import TwilioClient
 from vocode.streaming.telephony.client.vonage_client import VonageClient
 from vocode.streaming.telephony.config_manager.base_config_manager import BaseConfigManager
 from vocode.streaming.telephony.server.router.calls import CallsRouter
 from vocode.streaming.telephony.templater import get_connection_twiml
-from vocode.streaming.transcriber.abstract_factory import AbstractTranscriberFactory
-from vocode.streaming.transcriber.default_factory import DefaultTranscriberFactory
 from vocode.streaming.utils import create_conversation_id
 from vocode.streaming.utils.events_manager import EventsManager
 
 
 class AbstractInboundCallConfig(BaseModel, abc.ABC):
     url: str
-    agent_config: AgentConfig
-    transcriber_config: Optional[TranscriberConfig] = None
-    synthesizer_config: Optional[SynthesizerConfig] = None
+    pipeline_config: PipelineConfig
 
 
 class TwilioInboundCallConfig(AbstractInboundCallConfig):
@@ -58,10 +49,8 @@ class TelephonyServer:
         self,
         base_url: str,
         config_manager: BaseConfigManager,
+        pipeline_factory: AbstractPipelineFactory,
         inbound_call_configs: List[AbstractInboundCallConfig] = [],
-        transcriber_factory: AbstractTranscriberFactory = DefaultTranscriberFactory(),
-        agent_factory: AbstractAgentFactory = DefaultAgentFactory(),
-        synthesizer_factory: AbstractSynthesizerFactory = DefaultSynthesizerFactory(),
         events_manager: Optional[EventsManager] = None,
     ):
         self.base_url = base_url
@@ -72,9 +61,7 @@ class TelephonyServer:
             CallsRouter(
                 base_url=base_url,
                 config_manager=self.config_manager,
-                transcriber_factory=transcriber_factory,
-                agent_factory=agent_factory,
-                synthesizer_factory=synthesizer_factory,
+                pipeline_factory=pipeline_factory,
                 events_manager=self.events_manager,
             ).get_router()
         )
@@ -117,11 +104,7 @@ class TelephonyServer:
             twilio_to: str = Form(alias="To"),
         ) -> Response:
             call_config = TwilioCallConfig(
-                transcriber_config=inbound_call_config.transcriber_config
-                or TwilioCallConfig.default_transcriber_config(),
-                agent_config=inbound_call_config.agent_config,
-                synthesizer_config=inbound_call_config.synthesizer_config
-                or TwilioCallConfig.default_synthesizer_config(),
+                pipeline_config=inbound_call_config.pipeline_config,
                 twilio_config=twilio_config,
                 twilio_sid=twilio_sid,
                 from_phone=twilio_from,
@@ -136,11 +119,7 @@ class TelephonyServer:
         async def vonage_route(vonage_config: VonageConfig, request: Request):
             vonage_answer_request = VonageAnswerRequest.parse_obj(await request.json())
             call_config = VonageCallConfig(
-                transcriber_config=inbound_call_config.transcriber_config
-                or VonageCallConfig.default_transcriber_config(),
-                agent_config=inbound_call_config.agent_config,
-                synthesizer_config=inbound_call_config.synthesizer_config
-                or VonageCallConfig.default_synthesizer_config(),
+                pipeline_config=inbound_call_config.pipeline_config,
                 vonage_config=vonage_config,
                 vonage_uuid=vonage_answer_request.uuid,
                 to_phone=vonage_answer_request.from_,
